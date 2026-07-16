@@ -31,7 +31,8 @@ setup(
             'sara_viz_bridge = sara_control.sara_viz_bridge:main',
             'servo_controller = sara_control.servo_controller:main',
             'navigation1 = sara_control.navigation1:main',
-            'fake_sensor = sara_control.fake_sensor:main'
+            'fake_sensor = sara_control.fake_sensor:main',
+
         ],
     },
 )
