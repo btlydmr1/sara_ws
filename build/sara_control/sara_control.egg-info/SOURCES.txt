@@ -1,13 +1,6 @@
 package.xml
 setup.cfg
 setup.py
-../../build/sara_control/sara_control.egg-info/PKG-INFO
-../../build/sara_control/sara_control.egg-info/SOURCES.txt
-../../build/sara_control/sara_control.egg-info/dependency_links.txt
-../../build/sara_control/sara_control.egg-info/entry_points.txt
-../../build/sara_control/sara_control.egg-info/requires.txt
-../../build/sara_control/sara_control.egg-info/top_level.txt
-../../build/sara_control/sara_control.egg-info/zip-safe
 launch/sara_sim_launch.py
 resource/sara_control
 sara_control/__init__.py
