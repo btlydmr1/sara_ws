@@ -4,6 +4,8 @@ setup.py
 launch/sara_sim_launch.py
 resource/sara_control
 sara_control/__init__.py
+sara_control/guidance.py
+sara_control/mission_start.py
 sara_control/mock_sensors.py
 sara_control/navigation.py
 sara_control/navigation1.py

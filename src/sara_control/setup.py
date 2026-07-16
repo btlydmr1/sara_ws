@@ -32,6 +32,8 @@ setup(
             'servo_controller = sara_control.servo_controller:main',
             'navigation = sara_control.navigation:main',
             'mock_sensors = sara_control.mock_sensors:main',
+            'mission_start = sara_control.mission_start:main',
+            'guidance = sara_control.guidance:main',
 
         ],
     },

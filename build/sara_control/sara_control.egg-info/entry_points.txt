@@ -1,4 +1,5 @@
 [console_scripts]
+mission_start = sara_control.mission_start:main
 mock_sensors = sara_control.mock_sensors:main
 navigation = sara_control.navigation:main
 sara_simple_control = sara_control.sara_simple_control:main
