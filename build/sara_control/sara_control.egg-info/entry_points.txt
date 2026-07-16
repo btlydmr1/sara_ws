@@ -1,4 +1,5 @@
 [console_scripts]
+guidance = sara_control.guidance:main
 mission_start = sara_control.mission_start:main
 mock_sensors = sara_control.mock_sensors:main
 navigation = sara_control.navigation:main

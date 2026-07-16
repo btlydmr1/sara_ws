@@ -34,6 +34,7 @@ setup(
             'mock_sensors = sara_control.mock_sensors:main',
             'mission_start = sara_control.mission_start:main',
             'guidance = sara_control.guidance:main',
+            'autopilot = sara_control.autopilot:main',
 
         ],
     },
