@@ -30,8 +30,8 @@ setup(
             'sara_simple_control = sara_control.sara_simple_control:main',
             'sara_viz_bridge = sara_control.sara_viz_bridge:main',
             'servo_controller = sara_control.servo_controller:main',
-            'navigation1 = sara_control.navigation1:main',
-            'fake_sensor = sara_control.fake_sensor:main',
+            'navigation = sara_control.navigation:main',
+            'mock_sensors = sara_control.mock_sensors:main',
 
         ],
     },
