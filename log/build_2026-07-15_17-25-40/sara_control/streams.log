@@ -1,0 +1,21 @@
+[0.557s] Invoking command in '/home/betul/Downloads/SARA/sara_ws/build/sara_control': PYTHONPATH=/home/betul/Downloads/SARA/sara_ws/build/sara_control/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/betul/Downloads/SARA/sara_ws/install/sara_control/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/betul/Downloads/SARA/sara_ws/build/sara_control/build --no-deps symlink_data
+[0.701s] running develop
+[0.773s] running egg_info
+[0.773s] writing sara_control.egg-info/PKG-INFO
+[0.773s] writing dependency_links to sara_control.egg-info/dependency_links.txt
+[0.773s] writing entry points to sara_control.egg-info/entry_points.txt
+[0.773s] writing requirements to sara_control.egg-info/requires.txt
+[0.773s] writing top-level names to sara_control.egg-info/top_level.txt
+[0.774s] reading manifest file 'sara_control.egg-info/SOURCES.txt'
+[0.775s] writing manifest file 'sara_control.egg-info/SOURCES.txt'
+[0.775s] running build_ext
+[0.775s] Creating /home/betul/Downloads/SARA/sara_ws/install/sara_control/lib/python3.10/site-packages/sara-control.egg-link (link to .)
+[0.776s] Installing fake_sensor script to /home/betul/Downloads/SARA/sara_ws/install/sara_control/lib/sara_control
+[0.776s] Installing navigation1 script to /home/betul/Downloads/SARA/sara_ws/install/sara_control/lib/sara_control
+[0.776s] Installing sara_simple_control script to /home/betul/Downloads/SARA/sara_ws/install/sara_control/lib/sara_control
+[0.776s] Installing sara_viz_bridge script to /home/betul/Downloads/SARA/sara_ws/install/sara_control/lib/sara_control
+[0.776s] Installing servo_controller script to /home/betul/Downloads/SARA/sara_ws/install/sara_control/lib/sara_control
+[0.776s] 
+[0.776s] Installed /home/betul/Downloads/SARA/sara_ws/build/sara_control
+[0.776s] running symlink_data
+[0.791s] Invoked command in '/home/betul/Downloads/SARA/sara_ws/build/sara_control' returned '0': PYTHONPATH=/home/betul/Downloads/SARA/sara_ws/build/sara_control/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/betul/Downloads/SARA/sara_ws/install/sara_control/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/betul/Downloads/SARA/sara_ws/build/sara_control/build --no-deps symlink_data
