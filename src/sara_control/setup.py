@@ -35,6 +35,9 @@ setup(
             'mission_start = sara_control.mission_start:main',
             'guidance = sara_control.guidance:main',
             'autopilot = sara_control.autopilot:main',
+            'safety = sara_control.safety:main',
+            'vehicle_sim = sara_control.vehicle_sim:main',
+
 
         ],
     },

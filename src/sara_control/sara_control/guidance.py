@@ -540,8 +540,12 @@ class GuidanceNode(Node):
 
         pitch_ok = abs(self._pitch - self.g2_tirmanis_target_pitch) < self.pitch_tol
         nav_ok = self._nav_ok() and self._pixhawk_connected
+        # DUZELTME: "+30 derece ile yuzeye cik" -> "ates sinyali gonder" sirasina gore
+        # atesleme YUZEYE CIKILDIKTAN SONRA olmalidir (self._surface_detected == True),
+        # yuzeyde DEGILKEN degil.
         conditions_ok = (
             pitch_ok and nav_ok
+            and self._surface_detected
             and not self._emergency_stop
             and not self._leak_detected
         )
