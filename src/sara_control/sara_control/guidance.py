@@ -62,6 +62,7 @@ import math
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 from std_msgs.msg import Bool, String
 from nav_msgs.msg import Odometry
@@ -241,6 +242,8 @@ class GuidanceNode(Node):
         self._pixhawk_connected = False
         self._depth_valid = False
         self._surface_detected = False
+        self._nose_submerged = True   # burun su icinde mi (True=icinde/su var, False=disarida)
+        self._tail_submerged = True   # kuyruk su icinde mi
         self._last_nav_status_time = None
         self._nav_status_level = DiagnosticStatus.STALE
 
@@ -258,6 +261,23 @@ class GuidanceNode(Node):
         # ================= Abonelikler =================
         self.create_subscription(Odometry, '/sara/navigation/odom', self._on_odom, 10)
         self.create_subscription(Bool, '/sara/navigation/surface_detected', self._on_surface, 10)
+        # DUZELTME (KTR sayfa 14/37): Atesleme izni "yuzeyde mi degil mi" gibi
+        # tek bir genel bayrakla degil, TAM OLARAK "burun su DISINDA, kuyruk
+        # su ICINDE" (kismi cikis acisi) kosuluyla verilmelidir. Bu yuzden
+        # ham sensorlere DOGRUDAN abone oluyoruz - navigasyonun tek bir
+        # boolean'a indirgedigi surface_detected bu ayrimi ifade edemez.
+        # DUZELTME: sensor topic'leri (vehicle_sim/gercek donanim) BEST_EFFORT
+        # QoS ile yayin yapar. Varsayilan (RELIABLE) abonelik bunlarla
+        # UYUMSUZDUR - hicbir mesaj alinamaz, sessizce basarisiz olur
+        # (sadece bir WARN log basar, hata firlatmaz - bu yuzden fark
+        # edilmesi kolay degildi).
+        sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
+        self.create_subscription(Bool, '/sara/water_detect_1', self._on_water_nose, sensor_qos)  # burun sensoru
+        self.create_subscription(Bool, '/sara/water_detect_2', self._on_water_tail, sensor_qos)  # kuyruk sensoru
         self.create_subscription(DiagnosticStatus, '/sara/navigation/status', self._on_nav_status, 10)
         self.create_subscription(Bool, '/sara/safety/emergency_stop', self._on_emergency_stop, 10)
         self.create_subscription(Bool, '/sara/safety/leak_detected', self._on_leak, 10)
@@ -297,6 +317,19 @@ class GuidanceNode(Node):
 
     def _on_surface(self, msg: Bool):
         self._surface_detected = msg.data
+
+    def _on_water_nose(self, msg: Bool):
+        self._nose_submerged = msg.data
+
+    def _on_water_tail(self, msg: Bool):
+        self._tail_submerged = msg.data
+
+    @property
+    def _dogru_cikis_acisi(self) -> bool:
+        """KTR sayfa 14/37: atesleme icin gerekli TEK gecerli su durumu -
+        burun su DISINDA (False) VE kuyruk su ICINDE (True). Tamamen
+        batikken veya tamamen havadayken bu KOSUL SAGLANMAZ (bilerek)."""
+        return (not self._nose_submerged) and self._tail_submerged
 
     def _on_nav_status(self, msg: DiagnosticStatus):
         self._last_nav_status_time = self.get_clock().now()
@@ -532,18 +565,29 @@ class GuidanceNode(Node):
             self._goto_phase(PHASE_G2_ACI_DOGRULAMA)
 
     def _run_g2_aci_dogrulama(self):
+        """Madde 4: dogru aciyi algila. KTR (sayfa 14/37): 'dogru aci' pitch
+        degeriyle DEGIL, fiziksel olarak burun su disinda + kuyruk su icinde
+        olmasiyla dogrulanir (kismi cikis - roket atesleme icin gereken tam
+        pozisyon). Sadece pitch=30 derece olmasi YETERLI DEGILDIR.
+
+        DUZELTME: itki TAMAMEN KESILMEZ (once False idi). Gercek bir arac,
+        yuzeye yakin acili pozisyonunu itkisiz koruyamaz - sephiye tek basina
+        yeterli/hizli olmayabilir, arac tekrar batabilir (nose_submerged bir
+        daha hic False olamaz, sonsuza kadar bekler). Hafif itki ile pozisyon
+        korunur."""
         self._target_depth = self.g2_firing_depth
         self._target_pitch = self.g2_tirmanis_target_pitch
-        self._forward_motion = False
+        self._forward_motion = True
 
         pitch_ok = abs(self._pitch - self.g2_tirmanis_target_pitch) < self.pitch_tol
-        if self._conditions_held(pitch_ok):
+        dogru_aci_ok = pitch_ok and self._dogru_cikis_acisi
+        if self._conditions_held(dogru_aci_ok):
             self._goto_phase(PHASE_G2_BURUN_KAPAGI_AC)
 
     def _run_g2_burun_kapagi_ac(self):
         self._target_depth = self.g2_firing_depth
         self._target_pitch = self.g2_tirmanis_target_pitch
-        self._forward_motion = False
+        self._forward_motion = True  # DUZELTME: pozisyonu korumak icin hafif itki
         self._nose_cap_open_request = True
 
         if self._phase_elapsed() >= self.g2_nose_cap_open_duration:
@@ -552,17 +596,18 @@ class GuidanceNode(Node):
     def _run_g2_ates_sinyali(self):
         self._target_depth = self.g2_firing_depth
         self._target_pitch = self.g2_tirmanis_target_pitch
-        self._forward_motion = False
+        self._forward_motion = True  # DUZELTME: pozisyonu korumak icin hafif itki
         self._nose_cap_open_request = True
 
         pitch_ok = abs(self._pitch - self.g2_tirmanis_target_pitch) < self.pitch_tol
         nav_ok = self._nav_ok() and self._pixhawk_connected
-        # DUZELTME: "+30 derece ile yuzeye cik" -> "ates sinyali gonder" sirasina gore
-        # atesleme YUZEYE CIKILDIKTAN SONRA olmalidir (self._surface_detected == True),
-        # yuzeyde DEGILKEN degil.
+        # DUZELTME (KTR sayfa 14/37): atesleme izni "yuzeyde mi" gibi genel
+        # bir bayrakla DEGIL, "burun su disinda VE kuyruk su icinde" TAM
+        # kosuluyla verilmelidir. Tamamen batikken veya tamamen havadayken
+        # atesleme KESINLIKLE ENGELLENIR.
         conditions_ok = (
             pitch_ok and nav_ok
-            and self._surface_detected
+            and self._dogru_cikis_acisi
             and not self._emergency_stop
             and not self._leak_detected
         )

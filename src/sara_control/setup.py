@@ -39,6 +39,9 @@ setup(
             'vehicle_sim = sara_control.vehicle_sim:main',
             'sensor_get_data = sara_control.sensor_get_data:main',
             'telemetry = sara_control.telemetry:main',
+            'actuator_driver = sara_control.actuator_driver:main',
+            'water_sensor_driver = sara_control.water_sensor_driver:main',
+            'pressure_sensor_driver = sara_control.pressure_sensor_driver:main',
 
 
         ],

@@ -2,6 +2,7 @@ package.xml
 setup.cfg
 setup.py
 launch/sara_sim_launch.py
+launch/sara_system.launch.py
 resource/sara_control
 sara_control/__init__.py
 sara_control/autopilot.py

@@ -48,6 +48,7 @@ import math
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 from std_msgs.msg import Bool, Float64
 from nav_msgs.msg import Odometry
@@ -87,6 +88,8 @@ class SafetyNode(Node):
 
         self._motion_permission = False
         self._surface_detected = False
+        self._nose_submerged = True
+        self._tail_submerged = True
         self._pitch = 0.0
         self._depth = 0.0
 
@@ -99,6 +102,7 @@ class SafetyNode(Node):
         self._leak_detected = False
 
         self._nose_cap_command_latched = False
+        self._was_launch_command = False
 
         self.create_subscription(Float64, '/sara/control/thrust_request', self._on_thrust_req, 10)
         self.create_subscription(Vector3, '/sara/control/fin_request', self._on_fin_req, 10)
@@ -108,6 +112,18 @@ class SafetyNode(Node):
         self.create_subscription(Bool, '/sara/mission_start/motion_permission', self._on_motion_permission, 10)
         self.create_subscription(Odometry, '/sara/navigation/odom', self._on_odom, 10)
         self.create_subscription(Bool, '/sara/navigation/surface_detected', self._on_surface, 10)
+        # DUZELTME (KTR sayfa 14/37): Guvenlik katmani, atesleme icin
+        # navigasyonun tek boyutlu surface_detected ozetine GUVENMEMELI,
+        # burun/kuyruk sensorlerine DOGRUDAN abone olup TAM kosulu
+        # (burun disarida + kuyruk icerde) KENDISI dogrulamalidir.
+        # DUZELTME: ayni QoS uyumsuzlugu burada da vardi (bkz. guidance.py).
+        sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
+        self.create_subscription(Bool, '/sara/water_detect_1', self._on_water_nose, sensor_qos)
+        self.create_subscription(Bool, '/sara/water_detect_2', self._on_water_tail, sensor_qos)
         self.create_subscription(DiagnosticStatus, '/sara/navigation/status', self._on_nav_status, 10)
         self.create_subscription(Bool, '/sara/safety/emergency_stop', self._on_emergency_stop, 10)
         self.create_subscription(Bool, '/sara/safety/leak_detected', self._on_leak, 10)
@@ -159,6 +175,19 @@ class SafetyNode(Node):
 
     def _on_surface(self, msg: Bool):
         self._surface_detected = msg.data
+
+    def _on_water_nose(self, msg: Bool):
+        self._nose_submerged = msg.data
+
+    def _on_water_tail(self, msg: Bool):
+        self._tail_submerged = msg.data
+
+    @property
+    def _dogru_cikis_acisi(self) -> bool:
+        """KTR sayfa 14/37: atesleme icin TEK gecerli durum - burun su
+        DISINDA (False) VE kuyruk su ICINDE (True). Tamamen batik veya
+        tamamen havadayken bu KESINLIKLE saglanmaz."""
+        return (not self._nose_submerged) and self._tail_submerged
 
     def _on_nav_status(self, msg: DiagnosticStatus):
         self._last_nav_status_time = self.get_clock().now()
@@ -232,7 +261,7 @@ class SafetyNode(Node):
         launch_conditions = {
             'core_safe': core_safe,
             'gudum_istegi': self._launch_request,
-            'yuzeyde': self._surface_detected,
+            'burun_disarida_kuyruk_icerde': self._dogru_cikis_acisi,
             'burun_kapagi_acik': self._nose_cap_command_latched,
             'pitch_yeterli': self._pitch >= self.launch_min_pitch,
         }
@@ -261,8 +290,14 @@ class SafetyNode(Node):
         launch = Bool()
         launch.data = bool(launch_cmd)
         self._launch_cmd_pub.publish(launch)
-        if launch_cmd:
+        # DUZELTME: her tikte (saniyede 20 kez) DEGIL, sadece False->True
+        # GECISINDE bir kez logla - aksi halde ates penceresi boyunca
+        # terminal ayni satirla dolup tasar ("sonsuz uretiyor" izlenimi verir).
+        if launch_cmd and not self._was_launch_command:
             self.get_logger().warn('LAUNCH_COMMAND = TRUE gonderildi (tum bagimsiz kosullar saglandi).')
+        elif not launch_cmd and self._was_launch_command:
+            self.get_logger().info('LAUNCH_COMMAND = False (kosullar artik saglanmiyor / gorev tamamlandi).')
+        self._was_launch_command = launch_cmd
 
         # --- Semadaki "Guvenli Onay?" karar kutusu - Evet/Hayir ---
         approved = Bool()
@@ -289,6 +324,9 @@ class SafetyNode(Node):
             KeyValue(key='launch_command', value=str(launch_cmd)),
             KeyValue(key='pitch_deg', value=f'{math.degrees(self._pitch):.1f}'),
             KeyValue(key='surface_detected', value=str(self._surface_detected)),
+            KeyValue(key='nose_submerged', value=str(self._nose_submerged)),
+            KeyValue(key='tail_submerged', value=str(self._tail_submerged)),
+            KeyValue(key='dogru_cikis_acisi', value=str(self._dogru_cikis_acisi)),
             KeyValue(key='motion_permission', value=str(self._motion_permission)),
             KeyValue(key='emergency_stop', value=str(self._emergency_stop)),
             KeyValue(key='leak_detected', value=str(self._leak_detected)),

@@ -61,6 +61,7 @@ class MockSensorPublisher(Node):
         self.declare_parameter('ascend_duration_s', 10.0)    # yuzeye cikis suresi
         self.declare_parameter('yaw_rate_cruise', 0.05)      # duz seyirde donus hizi [rad/s]
         self.declare_parameter('rho', 1000.0)
+        self.declare_parameter('vehicle_length_m', 0.996)  # arac boyu [m] - burun/kuyruk sensor ayrimi icin (KTR)
         self.declare_parameter('g', 9.80665)
         self.declare_parameter('surface_pressure_pa', 101325.0)  # P0 - deniz seviyesi ~1 atm
         self.declare_parameter('pressure_noise_std', 15.0)   # [Pa]
@@ -74,6 +75,7 @@ class MockSensorPublisher(Node):
         self.ascend_dur = self.get_parameter('ascend_duration_s').value
         self.yaw_rate_cruise = self.get_parameter('yaw_rate_cruise').value
         self.rho = self.get_parameter('rho').value
+        self.vehicle_length = self.get_parameter('vehicle_length_m').value
         self.g = self.get_parameter('g').value
         self.p0 = self.get_parameter('surface_pressure_pa').value
         self.pressure_noise = self.get_parameter('pressure_noise_std').value
@@ -187,12 +189,16 @@ class MockSensorPublisher(Node):
         self._imu_pub.publish(imu)
 
         # --- Su var/yok sensoru simulasyonu (SEN0368 x2) ---
-        # True = su algilandi (su altinda), False = su yok (yuzeyde)
-        submerged = depth > 0.05
+        # DUZELTME (KTR): burun/kuyruk pitch acisina gore FARKLI derinliklerde
+        # (bkz. vehicle_sim.py'deki ayni mantik - burun_derinlik = derinlik -
+        # (L/2)*sin(pitch), kuyruk_derinlik = derinlik + (L/2)*sin(pitch))
+        half_length = self.vehicle_length / 2.0
+        nose_depth = depth - half_length * math.sin(pitch_noisy)
+        tail_depth = depth + half_length * math.sin(pitch_noisy)
         w1 = Bool()
-        w1.data = submerged
+        w1.data = nose_depth > 0.0  # /sara/water_detect_1 = BURUN
         w2 = Bool()
-        w2.data = submerged
+        w2.data = tail_depth > 0.0  # /sara/water_detect_2 = KUYRUK
         self._water1_pub.publish(w1)
         self._water2_pub.publish(w2)
 

@@ -81,6 +81,7 @@ class VehicleSimNode(Node):
         self.declare_parameter('k_buoyancy_depth', 0.25)          # buoyancy_command -> derinlik degisim hizi [m/s per unit]
         self.declare_parameter('pitch_limit_rad', 1.2)              # fiziksel pitch siniri (~69 derece)
         self.declare_parameter('max_depth', 10.0)                    # havuz/deniz azami derinligi (guvenlik siniri, simulasyonda)
+        self.declare_parameter('vehicle_length_m', 0.996)              # arac boyu [m] - burun/kuyruk sensor ayrimi icin (KTR)
 
         # ================= Sensor simulasyon parametreleri (mock_sensors.py ile ayni) =================
         self.declare_parameter('rho', 1000.0)
@@ -97,6 +98,7 @@ class VehicleSimNode(Node):
         self.k_buoyancy_depth = self.get_parameter('k_buoyancy_depth').value
         self.pitch_limit = self.get_parameter('pitch_limit_rad').value
         self.max_depth = self.get_parameter('max_depth').value
+        self.vehicle_length = self.get_parameter('vehicle_length_m').value
 
         self.rho = self.get_parameter('rho').value
         self.g = self.get_parameter('g').value
@@ -206,11 +208,25 @@ class VehicleSimNode(Node):
         imu.linear_acceleration.z = self.g
         self._imu_pub.publish(imu)
 
-        submerged = self._depth > 0.05
+        # DUZELTME (KTR): Burun ve kuyruk sensorleri ARTIK AYNI ANDA
+        # tetiklenmiyor. Arac pitch acisiyla catallanirken burun ve kuyruk
+        # FARKLI derinliklerdedir:
+        #   Derinlik_burun  = Derinlik_merkez - (L/2)*sin(pitch)
+        #   Derinlik_kuyruk = Derinlik_merkez + (L/2)*sin(pitch)
+        # Bu sayede +30 derece ile tirmanista once burun su yuzeyine cikar,
+        # kuyruk hala su icinde kalir - roket atesleme kosulunun (burun
+        # disarida + kuyruk icerde) simulasyonda GERCEKTEN olusmasi saglanir.
+        half_length = self.vehicle_length / 2.0
+        nose_depth = self._depth - half_length * math.sin(self._pitch)
+        tail_depth = self._depth + half_length * math.sin(self._pitch)
+
+        nose_submerged = nose_depth > 0.0
+        tail_submerged = tail_depth > 0.0
+
         w1 = Bool()
-        w1.data = submerged
+        w1.data = nose_submerged  # /sara/water_detect_1 = BURUN sensoru
         w2 = Bool()
-        w2.data = submerged
+        w2.data = tail_submerged  # /sara/water_detect_2 = KUYRUK sensoru
         self._water1_pub.publish(w1)
         self._water2_pub.publish(w2)
 
