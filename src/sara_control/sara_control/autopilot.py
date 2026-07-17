@@ -179,12 +179,19 @@ class AutopilotNode(Node):
         self.declare_parameter('control_rate_hz', 20.0)
         self.declare_parameter('nav_status_timeout_s', 2.0)
 
+        self.declare_parameter('explicit_pitch_threshold_rad', 0.05)  # bu esigin ustunde
+                                                                          # hedef pitch varsa (orn. Tirmanis
+                                                                          # +30 derece), derinlik-trim DEVRE
+                                                                          # DISI birakilir - gudumun acik
+                                                                          # aci komutu ile catismasin diye
+
         depth_trim_limit = self.get_parameter('depth_trim_limit_rad').value
         fin_pitch_limit = self.get_parameter('fin_pitch_limit').value
         fin_yaw_limit = self.get_parameter('fin_yaw_limit').value
         buoyancy_limit = self.get_parameter('buoyancy_limit').value
 
         self.nominal_thrust = self.get_parameter('nominal_thrust').value
+        self.explicit_pitch_threshold = self.get_parameter('explicit_pitch_threshold_rad').value
         self.nav_status_timeout = self.get_parameter('nav_status_timeout_s').value
         rate = float(self.get_parameter('control_rate_hz').value)
 
@@ -348,13 +355,18 @@ class AutopilotNode(Node):
         else:
             depth_error = self._target_depth - self._depth
 
-            # --- Kaskad: Derinlik hatasi -> pitch trim (kisa sureli) ---
-            # ISARET NOTU: sistemimizde pozitif pitch = burun yukari = yuzeye
-            # cikis (Tirmanis fazinda da boyle kullaniliyor). Bu yuzden dalis
-            # icin (derinlik hatasi pozitif = daha derine inilmeli) trim
-            # NEGATIF olmalidir - bu yuzden CIKARIYORUZ, TOPLAMIYORUZ.
-            pitch_trim = self.pid_depth_trim.update(depth_error, depth_rate, dt)
-            effective_pitch_target = self._target_pitch - pitch_trim
+            # --- Kaskad: Derinlik hatasi -> pitch trim (SADECE seviye ucus,
+            # yani gudum hedef_pitch=0 istediginde). Gudum ACIKCA bir pitch
+            # acisi istediginde (orn. Tirmanis: +30 derece) bu trim'i
+            # UYGULAMIYORUZ - aksi halde otopilot, gudumun beklediginden cok
+            # daha buyuk bir aciya gider ve gudum hicbir zaman "hedefe
+            # ulasildi" diyemez (donanim kilitlenmesi bu yuzden olustu). ---
+            if abs(self._target_pitch) < self.explicit_pitch_threshold:
+                pitch_trim = self.pid_depth_trim.update(depth_error, depth_rate, dt)
+                effective_pitch_target = self._target_pitch - pitch_trim
+            else:
+                self.pid_depth_trim.reset()  # kullanilmiyorken integral birikmesin
+                effective_pitch_target = self._target_pitch
 
             # --- Pitch PID -> kanatcik (elevator) ---
             pitch_error = effective_pitch_target - self._pitch

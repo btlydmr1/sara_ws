@@ -37,6 +37,8 @@ setup(
             'autopilot = sara_control.autopilot:main',
             'safety = sara_control.safety:main',
             'vehicle_sim = sara_control.vehicle_sim:main',
+            'sensor_get_data = sara_control.sensor_get_data:main',
+            'telemetry = sara_control.telemetry:main',
 
 
         ],

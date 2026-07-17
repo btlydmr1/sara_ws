@@ -166,6 +166,9 @@ class GuidanceNode(Node):
         self.declare_parameter('kararlilik_suresi_s', 3.0)           # kosul kesintisiz saglanma suresi
         self.declare_parameter('max_mission_duration_s', 600.0)      # fail-safe: azami gorev suresi
         self.declare_parameter('nav_status_timeout_s', 2.0)           # fail-safe: navigasyon veri zaman asimi
+        self.declare_parameter('startup_grace_period_s', 5.0)          # DUZELTME: baslangicta diger node'lar
+                                                                          # henuz yayina baslamadan "nav gecersiz"
+                                                                          # fail-safe'i yanlislikla tetiklenmesin
         self.declare_parameter('control_rate_hz', 10.0)
 
         # --- Gorev 1 (Seyir) parametreleri ---
@@ -175,11 +178,19 @@ class GuidanceNode(Node):
 
         # --- Gorev 2 (Atis) parametreleri ---
         self.declare_parameter('g2_duz_seyir_distance_m', 30.0)          # madde 1: 30 m duz git
-        # Guvenli atis bolgesi: SAHA/YARISMA KURALINA GORE TANIMLANMALI (TODO)
-        self.declare_parameter('g2_safe_zone_min_m', 0.0)                  # TODO: gercek deger
-        self.declare_parameter('g2_safe_zone_max_m', 5.0)                   # TODO: gercek deger
+        # Guvenli atis bolgesi: SAHA/YARISMA KURALINA GORE TANIMLANMALI (TODO - gercek
+        # deger geldiginde guncellenecek). Simdilik TEST AMACLI, 30m duz seyir
+        # mesafesiyle TUTARLI bir aralik verildi (mesafe 30m'ye ulasinca bolgeye
+        # girilebilsin diye) - onceki varsayilan (0-5m) 30m'lik seyirle CELISIYORDU.
+        self.declare_parameter('g2_safe_zone_min_m', 25.0)                 # TODO: gercek deger
+        self.declare_parameter('g2_safe_zone_max_m', 35.0)                   # TODO: gercek deger
         self.declare_parameter('g2_tirmanis_target_pitch_deg', 30.0)         # madde 3: +30 derece
-        self.declare_parameter('g2_firing_depth', 0.3)                        # yuzeye yakin, firlatma derinligi TODO
+        self.declare_parameter('g2_firing_depth', 0.0)                        # DUZELTME: gorev tanimi acikca
+                                                                                  # "yuzeye cik" diyor - ara bir
+                                                                                  # derinlik DEGIL, gercek yuzey (0m).
+                                                                                  # Derinlik fiziksel olarak 0'in
+                                                                                  # ALTINA inemedigi icin eski 0.3m
+                                                                                  # hedefi ASLA yakalanamiyordu.
         self.declare_parameter('g2_nose_cap_open_duration_s', 3.0)            # TODO: gercek servo suresi
 
         # ================= Iceri aktar =================
@@ -192,6 +203,7 @@ class GuidanceNode(Node):
         self.kararlilik_suresi = self.get_parameter('kararlilik_suresi_s').value
         self.max_mission_duration = self.get_parameter('max_mission_duration_s').value
         self.nav_status_timeout = self.get_parameter('nav_status_timeout_s').value
+        self.startup_grace_period = self.get_parameter('startup_grace_period_s').value
 
         self.g1_duz_seyir_distance = self.get_parameter('g1_duz_seyir_distance_m').value
         self.g1_uzaklasma_min_distance = self.get_parameter('g1_uzaklasma_min_distance_m').value
@@ -358,7 +370,10 @@ class GuidanceNode(Node):
             failsafe_reason = 'acil durdurma butonuna basildi'
         elif self._leak_detected:
             failsafe_reason = 'su kacagi (leak) tespit edildi'
-        elif not self._nav_ok():
+        elif self._mission_elapsed() > self.startup_grace_period and not self._nav_ok():
+            # DUZELTME: startup_grace_period icinde nav verisi henuz gelmemis
+            # olabilir (diger node'lar henuz yayina baslamamis) - bu durumu
+            # fail-safe saymiyoruz, sadece GERCEK bir zaman asimini sayiyoruz.
             failsafe_reason = 'navigasyon verisi gecersiz/zaman asimi'
         elif self._mission_elapsed() > self.max_mission_duration:
             failsafe_reason = 'azami gorev suresi asildi'
@@ -510,7 +525,9 @@ class GuidanceNode(Node):
         self._forward_motion = True
 
         pitch_ok = abs(self._pitch - self.g2_tirmanis_target_pitch) < self.pitch_tol
-        depth_ok = abs(self._depth - self.g2_firing_depth) < self.depth_tol
+        # DUZELTME: derinlik fiziksel olarak 0'in altina inemez (yuzey siniri).
+        # "Tam esitlik" yerine "yeterince sig/yuzeye ulasti mi" kontrolu dogru olan.
+        depth_ok = self._depth <= (self.g2_firing_depth + self.depth_tol)
         if self._conditions_held(pitch_ok and depth_ok):
             self._goto_phase(PHASE_G2_ACI_DOGRULAMA)
 
@@ -640,4 +657,4 @@ def main(args=None):
 
 
 if __name__ == '__main__':
-    main()
+    main()s
