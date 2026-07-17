@@ -189,12 +189,8 @@ class NavigationNode(Node):
 
         # ---------------- Abonelikler (Girdi) ----------------
         
-        self.create_subscription(
-            Imu,
-            '/sara/imu/data',
-            self._on_imu,
-            sensor_qos
-        )
+        self.create_subscription(Imu, '/mavros/imu/data', self._on_imu, sensor_qos)
+
 
         # HAZIR-BEKLEMEDE: ileride kablolanacak sensorler.
         # Yayin baslamadan hic mesaj gelmez, node calismaya devam eder;

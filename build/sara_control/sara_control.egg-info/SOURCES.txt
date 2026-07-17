@@ -9,11 +9,11 @@ sara_control/guidance.py
 sara_control/mission_start.py
 sara_control/mock_sensors.py
 sara_control/navigation.py
-sara_control/navigation1.py
 sara_control/safety.py
-sara_control/sara_simple_control.py
 sara_control/sara_viz_bridge.py
+sara_control/sensor_get_data.py
 sara_control/servo_controller.py
+sara_control/telemetry.py
 sara_control/vehicle_sim.py
 sara_control.egg-info/PKG-INFO
 sara_control.egg-info/SOURCES.txt
