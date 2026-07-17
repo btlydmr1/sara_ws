@@ -23,8 +23,8 @@ sadece kontrol mantigini kapali cevrim test etmek icindir):
     pitch        += pitch_rate * dt  (yumusatilmis, sinirlandirilmis)
 
     forward_speed = k_thrust * thrust_command
-    depth_rate_from_buoyancy = -k_buoyancy_depth * buoyancy_command  (YAVAS, UZUN SURELI)
-    depth_rate_from_pitch    = -forward_speed * sin(pitch)            (dalis acisi ile derinlik degisimi)
+    depth_rate_from_buoyancy = +k_buoyancy_depth * buoyancy_command  (pozitif=dal, YAVAS/UZUN SURELI)
+    depth_rate_from_pitch    = -forward_speed * sin(pitch)            (pozitif pitch=burun yukari=yuzeye cikis)
     depth       += (depth_rate_from_buoyancy + depth_rate_from_pitch) * dt
 
     x += forward_speed * cos(heading) * dt
@@ -171,8 +171,8 @@ class VehicleSimNode(Node):
         forward_speed = self.k_thrust * self._thrust_cmd
 
         depth_rate = (
-            -self.k_buoyancy_depth * self._buoyancy_cmd    # sephiye: uzun sureli/yavas
-            - forward_speed * math.sin(self._pitch)          # dalis acisi: hizli ilerlerken pitch derinligi degistirir
+            self.k_buoyancy_depth * self._buoyancy_cmd     # sephiye: pozitif komut = dal (derinlik artar), uzun sureli/yavas
+            - forward_speed * math.sin(self._pitch)          # pozitif pitch (burun yukari) = yuzeye cikis yonunde etki
         )
         self._depth = max(0.0, min(self.max_depth, self._depth + depth_rate * dt))
 

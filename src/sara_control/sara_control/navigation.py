@@ -40,7 +40,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
-from std_msgs.msg import Bool, Empty
+from std_msgs.msg import Bool, Empty, Float64
 from sensor_msgs.msg import Imu, FluidPressure
 from nav_msgs.msg import Odometry
 from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
@@ -128,6 +128,8 @@ class NavigationNode(Node):
         self.declare_parameter('accel_still_threshold', 0.6)
         self.declare_parameter('gyro_consistent_threshold', 2.0)
 
+        self.declare_parameter('thrust_active_threshold', 0.05)  # bu esigin altinda itki "yok" sayilir
+
         self.rho = self.get_parameter('rho').value
         self.g = self.get_parameter('g').value
         self.calib_samples_needed = int(self.get_parameter('pressure_calib_samples').value)
@@ -139,6 +141,7 @@ class NavigationNode(Node):
         self.water_fusion_mode = self.get_parameter('water_fusion_mode').value
         self.accel_still_th = self.get_parameter('accel_still_threshold').value
         self.gyro_consistent_th = self.get_parameter('gyro_consistent_threshold').value
+        self.thrust_active_threshold = self.get_parameter('thrust_active_threshold').value
         pub_rate = float(self.get_parameter('publish_rate_hz').value)
 
         # ---------------- Filtreler ----------------
@@ -162,6 +165,7 @@ class NavigationNode(Node):
         self._pitch_rate = 0.0
         self._yaw_rate = 0.0
         self._motion_consistent = False
+        self._thrust_active = False
 
         self._water_1 = None
         self._water_2 = None
@@ -196,6 +200,12 @@ class NavigationNode(Node):
 
         # Gorev yonetiminden "referanslama / kalibrasyonu yenile" komutu (Tablo 12)
         self.create_subscription(Empty, '/sara/navigation/recalibrate', self._on_recalibrate, 10)
+
+        # DUZELTME: ivmeolcer, SABIT HIZDA hareketi DURMA halinden AYIRT EDEMEZ
+        # (ikisinde de net ivme ~0). Bu yuzden "hareket tutarliligi" tek basina
+        # yaklasik ilerleme biriktirmek icin YETERLI DEGIL - guvenlik onayli
+        # GERCEK itki komutunu da (thrust_command>0) kontrol ediyoruz.
+        self.create_subscription(Float64, '/sara/control/thrust_command', self._on_thrust_command, sensor_qos)
 
         # ---------------- Yayinlar (Cikti) ----------------
         self._odom_pub = self.create_publisher(Odometry, '/sara/navigation/odom', 10)
@@ -239,6 +249,9 @@ class NavigationNode(Node):
         self._approx_distance = 0.0
         self._approx_x = 0.0
         self._approx_y = 0.0
+
+    def _on_thrust_command(self, msg: Float64):
+        self._thrust_active = abs(msg.data) > self.thrust_active_threshold
 
     # ======================================================================
     # Sensor callback'leri
@@ -311,7 +324,10 @@ class NavigationNode(Node):
             dt = 0.0
 
         # --- Yaklasik Ilerleme / Hareket Tutarliligi ---
-        if self._motion_consistent and dt > 0.0:
+        # DUZELTME: sadece IMU stabil diye degil, GERCEKTEN itki uygulaniyorken
+        # (thrust_active) ilerleme biriktir - aksi halde durgun araç bile
+        # zamanla "ilerlemis" gibi hesaplanir (ivmeolcer sabit hizi tespit edemez).
+        if self._motion_consistent and self._thrust_active and dt > 0.0:
             self._approx_distance += self.v_kalibre * dt
             if self.enable_xy:
                 self._approx_x += self.v_kalibre * math.cos(self._heading) * dt
@@ -376,6 +392,7 @@ class NavigationNode(Node):
             KeyValue(key='pressure_sensor_active', value=str(pressure_active)),
             KeyValue(key='water_sensors_active', value=str(water_active)),
             KeyValue(key='motion_consistent', value=str(self._motion_consistent)),
+            KeyValue(key='thrust_active', value=str(self._thrust_active)),
             KeyValue(key='surface_detected', value=str(self._surface_detected)),
             KeyValue(key='approx_distance_m', value=f'{self._approx_distance:.2f}'),
         ]

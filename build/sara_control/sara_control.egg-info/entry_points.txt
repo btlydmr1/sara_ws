@@ -1,9 +1,12 @@
 [console_scripts]
+autopilot = sara_control.autopilot:main
 guidance = sara_control.guidance:main
 mission_start = sara_control.mission_start:main
 mock_sensors = sara_control.mock_sensors:main
 navigation = sara_control.navigation:main
+safety = sara_control.safety:main
 sara_simple_control = sara_control.sara_simple_control:main
 sara_viz_bridge = sara_control.sara_viz_bridge:main
 servo_controller = sara_control.servo_controller:main
+vehicle_sim = sara_control.vehicle_sim:main
 

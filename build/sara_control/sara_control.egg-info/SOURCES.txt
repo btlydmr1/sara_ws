@@ -4,14 +4,17 @@ setup.py
 launch/sara_sim_launch.py
 resource/sara_control
 sara_control/__init__.py
+sara_control/autopilot.py
 sara_control/guidance.py
 sara_control/mission_start.py
 sara_control/mock_sensors.py
 sara_control/navigation.py
 sara_control/navigation1.py
+sara_control/safety.py
 sara_control/sara_simple_control.py
 sara_control/sara_viz_bridge.py
 sara_control/servo_controller.py
+sara_control/vehicle_sim.py
 sara_control.egg-info/PKG-INFO
 sara_control.egg-info/SOURCES.txt
 sara_control.egg-info/dependency_links.txt

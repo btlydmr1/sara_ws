@@ -349,8 +349,12 @@ class AutopilotNode(Node):
             depth_error = self._target_depth - self._depth
 
             # --- Kaskad: Derinlik hatasi -> pitch trim (kisa sureli) ---
+            # ISARET NOTU: sistemimizde pozitif pitch = burun yukari = yuzeye
+            # cikis (Tirmanis fazinda da boyle kullaniliyor). Bu yuzden dalis
+            # icin (derinlik hatasi pozitif = daha derine inilmeli) trim
+            # NEGATIF olmalidir - bu yuzden CIKARIYORUZ, TOPLAMIYORUZ.
             pitch_trim = self.pid_depth_trim.update(depth_error, depth_rate, dt)
-            effective_pitch_target = self._target_pitch + pitch_trim
+            effective_pitch_target = self._target_pitch - pitch_trim
 
             # --- Pitch PID -> kanatcik (elevator) ---
             pitch_error = effective_pitch_target - self._pitch
