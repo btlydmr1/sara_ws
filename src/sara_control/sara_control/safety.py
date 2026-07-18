@@ -69,7 +69,12 @@ class SafetyNode(Node):
 
         self.declare_parameter('nav_status_timeout_s', 2.0)
         self.declare_parameter('control_rate_hz', 20.0)
-        self.declare_parameter('launch_min_pitch_deg', 15.0)
+        # DUZELTME (Teknik Sartname Madde 4.1): "Arac su yuzeyine +30 dereceden
+        # FAZLA yunuslama aciSiyla ulasmali". Bu, guduм'un kendi kontrolunden
+        # BAGIMSIZ ikinci bir dogrulama - bilerek guduм'un esiginden (30) biraz
+        # daha DUSUK tutuluyor (25) ki iki bagimsiz kontrol ayni anda AYNI
+        # noktada basarisiz olmasin, ama yine de sartnamenin ruhuna (30 civari) sadik.
+        self.declare_parameter('launch_min_pitch_deg', 25.0)
         self.declare_parameter('request_timeout_s', 0.5)
 
         self.nav_status_timeout = self.get_parameter('nav_status_timeout_s').value

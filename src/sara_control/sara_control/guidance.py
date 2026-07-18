@@ -185,7 +185,8 @@ class GuidanceNode(Node):
         # girilebilsin diye) - onceki varsayilan (0-5m) 30m'lik seyirle CELISIYORDU.
         self.declare_parameter('g2_safe_zone_min_m', 25.0)                 # TODO: gercek deger
         self.declare_parameter('g2_safe_zone_max_m', 35.0)                   # TODO: gercek deger
-        self.declare_parameter('g2_tirmanis_target_pitch_deg', 30.0)         # madde 3: +30 derece
+        self.declare_parameter('g2_tirmanis_target_pitch_deg', 35.0)         # madde 3: 30 dereceden FAZLA hedeflenmeli, pay icin 35 kullanildi
+        self.declare_parameter('g2_min_launch_pitch_deg', 30.0)               # DUZELTME: Sartname acikca ">30 derece" diyor (Madde 4.1)
         self.declare_parameter('g2_firing_depth', 0.0)                        # DUZELTME: gorev tanimi acikca
                                                                                   # "yuzeye cik" diyor - ara bir
                                                                                   # derinlik DEGIL, gercek yuzey (0m).
@@ -214,6 +215,7 @@ class GuidanceNode(Node):
         self.g2_safe_zone_min = self.get_parameter('g2_safe_zone_min_m').value
         self.g2_safe_zone_max = self.get_parameter('g2_safe_zone_max_m').value
         self.g2_tirmanis_target_pitch = math.radians(self.get_parameter('g2_tirmanis_target_pitch_deg').value)
+        self.g2_min_launch_pitch = math.radians(self.get_parameter('g2_min_launch_pitch_deg').value)
         self.g2_firing_depth = self.get_parameter('g2_firing_depth').value
         self.g2_nose_cap_open_duration = self.get_parameter('g2_nose_cap_open_duration_s').value
 
@@ -512,14 +514,19 @@ class GuidanceNode(Node):
             self._goto_phase(PHASE_G1_GERI_DONUS)
 
     def _run_g1_geri_donus(self):
+        """Madde 5: baslangic/bitis cizgisine geri don.
+        DUZELTME (Teknik Sartname 6.1.1): donus hedefi aracin 0m'deki
+        cikis noktasi DEGIL, "kiyidan 10 metre uzaklikta bir baslangic/bitis
+        cizgisi" - yani g1_duz_seyir_distance (10m) mesafesindeki cizgi."""
         return_heading = wrap_pi(self._reference_heading + math.pi)
         self._target_depth = self.dive_target_depth
         self._target_heading = return_heading
         self._target_pitch = 0.0
         self._forward_motion = True
 
-        distance_to_start_ok = self._approx_distance() <= self.g1_geri_donus_tolerance
-        if self._conditions_held(distance_to_start_ok):
+        distance_to_finish_line = abs(self._approx_distance() - self.g1_duz_seyir_distance)
+        distance_ok = distance_to_finish_line <= self.g1_geri_donus_tolerance
+        if self._conditions_held(distance_ok):
             self._goto_phase(PHASE_G1_TAMAMLANDI_YUZEYDE_BEKLE)
 
     def _run_g1_tamamlandi(self):
@@ -557,7 +564,9 @@ class GuidanceNode(Node):
         self._target_pitch = self.g2_tirmanis_target_pitch
         self._forward_motion = True
 
-        pitch_ok = abs(self._pitch - self.g2_tirmanis_target_pitch) < self.pitch_tol
+        # DUZELTME (Sartname 4.1): ">30 derece" sarti - TEK YONLU esik, simetrik
+        # tolerans DEGIL (simetrik tolerans 30 derecenin ALTINI da kabul ederdi).
+        pitch_ok = self._pitch >= self.g2_min_launch_pitch
         # DUZELTME: derinlik fiziksel olarak 0'in altina inemez (yuzey siniri).
         # "Tam esitlik" yerine "yeterince sig/yuzeye ulasti mi" kontrolu dogru olan.
         depth_ok = self._depth <= (self.g2_firing_depth + self.depth_tol)
@@ -579,7 +588,7 @@ class GuidanceNode(Node):
         self._target_pitch = self.g2_tirmanis_target_pitch
         self._forward_motion = True
 
-        pitch_ok = abs(self._pitch - self.g2_tirmanis_target_pitch) < self.pitch_tol
+        pitch_ok = self._pitch >= self.g2_min_launch_pitch  # DUZELTME: >30 derece sarti, tek yonlu
         dogru_aci_ok = pitch_ok and self._dogru_cikis_acisi
         if self._conditions_held(dogru_aci_ok):
             self._goto_phase(PHASE_G2_BURUN_KAPAGI_AC)
@@ -599,7 +608,7 @@ class GuidanceNode(Node):
         self._forward_motion = True  # DUZELTME: pozisyonu korumak icin hafif itki
         self._nose_cap_open_request = True
 
-        pitch_ok = abs(self._pitch - self.g2_tirmanis_target_pitch) < self.pitch_tol
+        pitch_ok = self._pitch >= self.g2_min_launch_pitch  # DUZELTME: >30 derece sarti (Sartname 4.1), tek yonlu
         nav_ok = self._nav_ok() and self._pixhawk_connected
         # DUZELTME (KTR sayfa 14/37): atesleme izni "yuzeyde mi" gibi genel
         # bir bayrakla DEGIL, "burun su disinda VE kuyruk su icinde" TAM

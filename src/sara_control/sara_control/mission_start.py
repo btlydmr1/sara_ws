@@ -64,6 +64,7 @@ class MissionStartNode(Node):
         self._state = STATE_IDLE
         self._countdown_start = None
         self._start_command = bool(self.auto_start)
+        self._prev_start_command = self._start_command
         self._emergency_stop = False
 
         self._motion_permission = False
@@ -97,6 +98,26 @@ class MissionStartNode(Node):
 
     # ======================================================================
     def _on_timer(self):
+        # DUZELTME (Teknik Sartname Madde 4.2): "Enerjilendirme butonu aktif
+        # edildikten sonra TEKRAR BASILMASI durumunda TUM SISTEMIN
+        # enerjilendirilmesi KESILMELIDIR." Bu, Acil Durdurma'dan FARKLI bir
+        # "Normal Kapali" durumu (Tablo 3: Acil Durdurma=0, Enerjilendirme=0
+        # -> Normal Kapali). start_command'in True'dan False'a GECISINI
+        # (ikinci basis) yakalayip sistemi IDLE'a donduruyoruz.
+        if self._prev_start_command and not self._start_command and self._state != STATE_IDLE:
+            self.get_logger().warn(
+                'Enerjilendirme butonuna tekrar basildi - sistem NORMAL KAPALI durumuna donuyor '
+                '(Acil Durdurma DEGIL).'
+            )
+            self._state = STATE_IDLE
+            self._countdown_start = None
+            self._motion_permission = False
+            self._acoustic_warning = False
+            self._prev_start_command = self._start_command
+            self._publish_status()
+            return
+        self._prev_start_command = self._start_command
+
         # GUVENLIK KURALI: acil durdurma -> motor hemen durur, IDLE'a don
         if self._emergency_stop:
             if self._state != STATE_IDLE:
