@@ -36,7 +36,8 @@ Girdi (safety_node'un NIHAI komutlari):
     /sara/control/buoyancy_command    (std_msgs/Float64)
 
 Cikti (navigation_node'un bekledigi TAM AYNI sensor topic'leri):
-    /mavros/imu/data              (sensor_msgs/Imu)
+    /sara/imu/data                 (sensor_msgs/Imu) - sensor_get_data.py'nin
+                                     ciktisiyla AYNI topic (Sensor Veri Alma Katmani)
     /sara/pressure                 (sensor_msgs/FluidPressure)
     /sara/water_detect_1           (std_msgs/Bool)
     /sara/water_detect_2           (std_msgs/Bool)
@@ -131,7 +132,7 @@ class VehicleSimNode(Node):
         self.create_subscription(Float64, '/sara/control/buoyancy_command', self._on_buoyancy, 10)
 
         # ================= Yayinlar - navigation_node'un bekledigi sensor topic'leri =================
-        self._imu_pub = self.create_publisher(Imu, '/mavros/imu/data', qos)
+        self._imu_pub = self.create_publisher(Imu, '/sara/imu/data', qos)
         self._pressure_pub = self.create_publisher(FluidPressure, '/sara/pressure', qos)
         self._water1_pub = self.create_publisher(Bool, '/sara/water_detect_1', qos)
         self._water2_pub = self.create_publisher(Bool, '/sara/water_detect_2', qos)

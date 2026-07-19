@@ -2,6 +2,13 @@
 """
 pressure_sensor_driver.py
 ===========================
+*** DIKKAT - OLASI CAKISMA ***
+sensor_get_data.py, bu node'un islevini (SEN0257+ADS1115 okuma) ARTIK
+KENDI ICINDE yapiyor ve AYNI topic'e (/sara/pressure) yayin yapiyor. Bu
+iki node'u AYNI ANDA CALISTIRMAYIN - ikisi de ayni I2C adresini (0x48)
+acmaya calisirsa cakisma/hata olusabilir. sensor_get_data.py kullaniliyorsa
+BU DOSYA GEREKSIZDIR, calistirmayin.
+
 SARA platformu - ADS1115 + SEN0257 Basinc Sensoru Surucusu (GERCEK DONANIM)
 
 Bagli donanim (kullanicidan alinan gercek kablolama):

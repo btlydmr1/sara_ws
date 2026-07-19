@@ -9,7 +9,7 @@ dugumunu uctan uca test edebilmek icin gercekci bir gorev senaryosu simule
 eder ve navigation.py'nin bekledigi TAM AYNI topic/mesaj tiplerine yayin
 yapar:
 
-    /mavros/imu/data          (sensor_msgs/Imu)
+    /sara/imu/data            (sensor_msgs/Imu)
     /sara/pressure             (sensor_msgs/FluidPressure)
     /sara/water_detect_1       (std_msgs/Bool)
     /sara/water_detect_2       (std_msgs/Bool)
@@ -95,7 +95,7 @@ class MockSensorPublisher(Node):
             depth=10,
         )
 
-        self._imu_pub = self.create_publisher(Imu, '/mavros/imu/data', qos)
+        self._imu_pub = self.create_publisher(Imu, '/sara/imu/data', qos)
         self._pressure_pub = self.create_publisher(FluidPressure, '/sara/pressure', qos)
         self._water1_pub = self.create_publisher(Bool, '/sara/water_detect_1', qos)
         self._water2_pub = self.create_publisher(Bool, '/sara/water_detect_2', qos)

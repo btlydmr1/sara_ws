@@ -5,7 +5,9 @@ navigation.py
 SARA platformu - Navigasyon Katmani (sara_control paketi icinde)
 Ontasarim Raporu Tablo 13 uygulamasi - SADECE STANDART ROS2 MESAJLARI
 
-Su an aktif olan girdi : Pixhawk 6X IMU  (/mavros/imu/data)
+Su an aktif olan girdi : Pixhawk 6X IMU  (/sara/imu/data - sensor_get_data.py
+                          Sensor Veri Alma Katmani'ndan; test modunda
+                          vehicle_sim.py ayni topic'e yayin yapar)
 Ileride baglanacak     : Basinc sensoru  (/sara/pressure)
                           SEN0368 su var/yok x2 (/sara/water_detect_1, _2)
 Bu sensorler bagli olmasa bile dugum calisir; ilgili ciktilar
@@ -128,6 +130,12 @@ class NavigationNode(Node):
         self.declare_parameter('accel_still_threshold', 0.6)
         self.declare_parameter('gyro_consistent_threshold', 2.0)
 
+        self.declare_parameter('imu_topic', '/sara/imu/data')     # DUZELTME: artik sensor_get_data.py'nin
+                                                                       # ciktisini dinliyoruz (Sensor Veri Alma
+                                                                       # Katmani), mavros'a DOGRUDAN DEGIL - katmanli
+                                                                       # mimariye uygunluk icin (Tablo 11).
+                                                                       # Test modunda vehicle_sim.py de ayni
+                                                                       # topic'e yayin yapar.
         self.declare_parameter('thrust_active_threshold', 0.05)  # bu esigin altinda itki "yok" sayilir
 
         self.rho = self.get_parameter('rho').value
@@ -142,6 +150,7 @@ class NavigationNode(Node):
         self.accel_still_th = self.get_parameter('accel_still_threshold').value
         self.gyro_consistent_th = self.get_parameter('gyro_consistent_threshold').value
         self.thrust_active_threshold = self.get_parameter('thrust_active_threshold').value
+        self.imu_topic = self.get_parameter('imu_topic').value
         pub_rate = float(self.get_parameter('publish_rate_hz').value)
 
         # ---------------- Filtreler ----------------
@@ -189,7 +198,7 @@ class NavigationNode(Node):
 
         # ---------------- Abonelikler (Girdi) ----------------
         
-        self.create_subscription(Imu, '/mavros/imu/data', self._on_imu, sensor_qos)
+        self.create_subscription(Imu, self.imu_topic, self._on_imu, sensor_qos)
 
 
         # HAZIR-BEKLEMEDE: ileride kablolanacak sensorler.
@@ -217,7 +226,7 @@ class NavigationNode(Node):
         self.create_timer(1.0 / pub_rate, self._on_timer)
 
         self.get_logger().info(
-            'navigation_node baslatildi. IMU aktif (/mavros/imu/data). '
+            f'navigation_node baslatildi. IMU aktif ({self.imu_topic}). '
             f'Basinc kalibrasyonu icin {self.calib_samples_needed} ornek bekleniyor '
             '(basinc sensoru baglanmadiysa depth_valid=False kalacaktir).'
         )
@@ -225,7 +234,7 @@ class NavigationNode(Node):
         # Abonelik/yayin listesini acikca logla - "Subscribers bos gorunuyor"
         # gibi build/cache kaynakli sorunlari hizli teshis etmek icin.
         subs = [
-            '/mavros/imu/data [sensor_msgs/Imu]',
+            f'{self.imu_topic} [sensor_msgs/Imu]',
             '/sara/pressure [sensor_msgs/FluidPressure]',
             '/sara/water_detect_1 [std_msgs/Bool]',
             '/sara/water_detect_2 [std_msgs/Bool]',

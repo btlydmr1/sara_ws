@@ -2,6 +2,13 @@
 """
 water_sensor_driver.py
 ========================
+*** DIKKAT - OLASI CAKISMA ***
+sensor_get_data.py, bu node'un islevini (SEN0368 x2 okuma) ARTIK KENDI
+ICINDE yapiyor ve AYNI topic'lere (/sara/water_detect_1, _2) yayin
+yapiyor. Bu iki node'u AYNI ANDA CALISTIRMAYIN - ikisi de ayni GPIO
+pinlerini (15/16) acmaya calisirsa cakisma/hata olusabilir. sensor_get_data.py
+kullaniliyorsa BU DOSYA GEREKSIZDIR, calistirmayin.
+
 SARA platformu - SEN0368 Su Sensoru Surucusu (GERCEK DONANIM)
 
 Bagli donanim (kullanicidan alinan gercek kablolama):
