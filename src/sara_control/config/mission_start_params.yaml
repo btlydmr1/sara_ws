@@ -7,3 +7,6 @@ mission_start_node:
     acoustic_warning_lead_s: 10.0     # rapor - Tablo 11
     publish_rate_hz: 10.0
     auto_start: false                 # true ise start_command beklemeden otomatik baslar (SADECE TEST)
+    require_subsystems_healthy: true  # YENI: self-check gate - navigation/autopilot/safety
+                                        # saglikli degilse 60sn dolsa bile izin verilmez
+    subsystem_status_timeout_s: 2.0   # YENI: alt sistem status'unun "taze" sayilma suresi

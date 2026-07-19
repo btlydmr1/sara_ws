@@ -15,8 +15,14 @@ Akis:
     IDLE (start_command bekleniyor)
         --start_command=True-->
     COUNTING_DOWN (60 sn motor inhibit, son 10 sn'de acoustic_warning=True)
-        --60 sn dolunca-->
+        --60 sn dolunca VE alt sistemler saglikliysa-->
     PERMITTED (motion_permission=True, kalici)
+
+    YENI - Self-Check Gate: 60 sn dolmus olsa bile, navigation/autopilot/
+    safety node'larindan biri ERROR durumdaysa veya hic veri gelmiyorsa
+    (crash/baglanti kaybi), hareket izni VERILMEZ - sebep status mesajinda
+    acikca gorunur (orn. "navigasyon hazir degil"). Bu, sahada bir alt
+    sistem arizasinin sessizce/belirsiz sekilde gozden kacmasini onler.
 
     Herhangi bir anda emergency_stop=True olursa: motion_permission=False
     olur ve IDLE'a donulur (yeniden baslatma icin start_command gerekir) -
@@ -27,6 +33,9 @@ Girdi:
     /sara/mission_start/start_command   (std_msgs/Bool)  - "gorev baslatma izni"
                                           (fiziksel anahtar/lanyard -> True)
     /sara/safety/emergency_stop         (std_msgs/Bool)  - yoksa False varsayilir
+    /sara/navigation/status              (diagnostic_msgs/DiagnosticStatus) - YENI: self-check
+    /sara/control/status                 (diagnostic_msgs/DiagnosticStatus) - YENI: self-check (autopilot)
+    /sara/safety/status                  (diagnostic_msgs/DiagnosticStatus) - YENI: self-check
 
 Cikti:
     /sara/mission_start/motion_permission  (std_msgs/Bool)  - "Hareket baslatma izni"
@@ -55,10 +64,14 @@ class MissionStartNode(Node):
         self.declare_parameter('acoustic_warning_lead_s', 10.0)     # rapor - Tablo 11
         self.declare_parameter('publish_rate_hz', 10.0)
         self.declare_parameter('auto_start', False)                  # True ise start_command beklemeden ana enerjilendirmede otomatik baslar
+        self.declare_parameter('require_subsystems_healthy', True)     # YENI: self-check gate ac/kapa (test icin kapatilabilir)
+        self.declare_parameter('subsystem_status_timeout_s', 2.0)       # YENI: alt sistem status'unun "taze" sayilma suresi
 
         self.motor_inhibit_duration = self.get_parameter('motor_inhibit_duration_s').value
         self.acoustic_warning_lead = self.get_parameter('acoustic_warning_lead_s').value
         self.auto_start = self.get_parameter('auto_start').value
+        self.require_subsystems_healthy = self.get_parameter('require_subsystems_healthy').value
+        self.subsystem_status_timeout = self.get_parameter('subsystem_status_timeout_s').value
         rate = float(self.get_parameter('publish_rate_hz').value)
 
         self._state = STATE_IDLE
@@ -70,8 +83,19 @@ class MissionStartNode(Node):
         self._motion_permission = False
         self._acoustic_warning = False
 
+        # YENI - Self-Check Gate: alt sistemlerin son bilinen durumu
+        self._nav_status_time = None
+        self._nav_status_level = DiagnosticStatus.STALE
+        self._autopilot_status_time = None
+        self._autopilot_status_level = DiagnosticStatus.STALE
+        self._safety_status_time = None
+        self._safety_status_level = DiagnosticStatus.STALE
+
         self.create_subscription(Bool, '/sara/mission_start/start_command', self._on_start_command, 10)
         self.create_subscription(Bool, '/sara/safety/emergency_stop', self._on_emergency_stop, 10)
+        self.create_subscription(DiagnosticStatus, '/sara/navigation/status', self._on_nav_status, 10)
+        self.create_subscription(DiagnosticStatus, '/sara/control/status', self._on_autopilot_status, 10)
+        self.create_subscription(DiagnosticStatus, '/sara/safety/status', self._on_safety_status, 10)
 
         self._permission_pub = self.create_publisher(Bool, '/sara/mission_start/motion_permission', 10)
         self._warning_pub = self.create_publisher(Bool, '/sara/mission_start/acoustic_warning', 10)
@@ -95,6 +119,49 @@ class MissionStartNode(Node):
 
     def _on_emergency_stop(self, msg: Bool):
         self._emergency_stop = msg.data
+
+    def _on_nav_status(self, msg: DiagnosticStatus):
+        self._nav_status_time = self.get_clock().now()
+        self._nav_status_level = msg.level
+
+    def _on_autopilot_status(self, msg: DiagnosticStatus):
+        self._autopilot_status_time = self.get_clock().now()
+        self._autopilot_status_level = msg.level
+
+    def _on_safety_status(self, msg: DiagnosticStatus):
+        self._safety_status_time = self.get_clock().now()
+        self._safety_status_level = msg.level
+
+    def _subsystem_fresh(self, stamp) -> bool:
+        if stamp is None:
+            return False
+        age = (self.get_clock().now() - stamp).nanoseconds * 1e-9
+        return age < self.subsystem_status_timeout
+
+    def _subsystems_healthy(self):
+        """YENI - Self-Check Gate: navigation/autopilot/safety node'larindan
+        veri geliyor mu VE hicbiri ERROR bildirmiyor mu? Donmezse (True,[]),
+        donerse (False, [sebep listesi]) - status mesajinda gosterilir."""
+        if not self.require_subsystems_healthy:
+            return True, []
+
+        problems = []
+        if not self._subsystem_fresh(self._nav_status_time):
+            problems.append('navigasyon_veri_yok')
+        elif self._nav_status_level == DiagnosticStatus.ERROR:
+            problems.append('navigasyon_ERROR')
+
+        if not self._subsystem_fresh(self._autopilot_status_time):
+            problems.append('otopilot_veri_yok')
+        elif self._autopilot_status_level == DiagnosticStatus.ERROR:
+            problems.append('otopilot_ERROR')
+
+        if not self._subsystem_fresh(self._safety_status_time):
+            problems.append('guvenlik_veri_yok')
+        elif self._safety_status_level == DiagnosticStatus.ERROR:
+            problems.append('guvenlik_ERROR')
+
+        return (len(problems) == 0), problems
 
     # ======================================================================
     def _on_timer(self):
@@ -146,10 +213,22 @@ class MissionStartNode(Node):
             self._acoustic_warning = remaining <= self.acoustic_warning_lead
 
             if elapsed >= self.motor_inhibit_duration:
-                self._state = STATE_PERMITTED
-                self._acoustic_warning = False
-                self._motion_permission = True
-                self.get_logger().info('60 sn motor inhibit tamamlandi - hareket baslatma izni VERILDI.')
+                # YENI - Self-Check Gate: sure dolmus olsa bile, alt
+                # sistemler saglikli degilse izin VERILMEZ.
+                healthy, problems = self._subsystems_healthy()
+                if healthy:
+                    self._state = STATE_PERMITTED
+                    self._acoustic_warning = False
+                    self._motion_permission = True
+                    self.get_logger().info('60 sn motor inhibit tamamlandi - hareket baslatma izni VERILDI.')
+                else:
+                    self._acoustic_warning = False
+                    self._motion_permission = False
+                    self.get_logger().warn(
+                        f'60 sn tamamlandi AMA alt sistemler hazir degil, izin VERILMEDI: '
+                        f'{", ".join(problems)}',
+                        throttle_duration_sec=5.0,
+                    )
 
         else:  # STATE_PERMITTED
             self._motion_permission = True
@@ -174,13 +253,23 @@ class MissionStartNode(Node):
         status = DiagnosticStatus()
         status.name = 'sara_mission_start'
         status.hardware_id = 'jetson_orin_nano'
-        status.level = DiagnosticStatus.WARN if self._emergency_stop else DiagnosticStatus.OK
+        healthy, problems = self._subsystems_healthy()
+        if self._emergency_stop:
+            status.level = DiagnosticStatus.WARN
+        elif not healthy:
+            status.level = DiagnosticStatus.WARN
+        else:
+            status.level = DiagnosticStatus.OK
         status.message = f'Durum: {self._state}'
+        if not healthy:
+            status.message += f' - Alt sistem sorunu: {", ".join(problems)}'
         status.values = [
             KeyValue(key='motion_permission', value=str(self._motion_permission)),
             KeyValue(key='acoustic_warning', value=str(self._acoustic_warning)),
             KeyValue(key='remaining_inhibit_s', value=f'{remaining_s:.1f}'),
             KeyValue(key='emergency_stop', value=str(self._emergency_stop)),
+            KeyValue(key='subsystems_healthy', value=str(healthy)),
+            KeyValue(key='subsystem_problems', value=','.join(problems) if problems else '-'),
         ]
         self._status_pub.publish(status)
 
