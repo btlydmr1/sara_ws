@@ -1,0 +1,12 @@
+# safety_params.yaml
+# SARA platformu - Guvenlik Katmani parametreleri
+
+safety_node:
+  ros__parameters:
+    nav_status_timeout_s: 2.0
+    control_rate_hz: 20.0
+    # Sartname 4.1: ">30 derece" - guduмden BAGIMSIZ ikinci dogrulama,
+    # bilerek gudumun esiginden (30) biraz dusuk tutuluyor (25) ki iki
+    # bagimsiz kontrol ayni anda AYNI noktada basarisiz olmasin.
+    launch_min_pitch_deg: 25.0
+    request_timeout_s: 0.5

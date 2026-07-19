@@ -1,0 +1,44 @@
+# autopilot_params.yaml
+# SARA platformu - Otopilot/PID Katmani parametreleri
+# NOT: PID katsayilari YER TUTUCUDUR - rapor geregi "aracin tahmini kutlesi,
+# gorev derinligi, beklenen hiz araligi, kanatcik etkisi, sephiye sisteminin
+# tepki suresi ve eyleyici sinirlari dikkate alinarak" belirlenip lab/su ici
+# testlerle iyilestirilmelidir.
+
+autopilot_node:
+  ros__parameters:
+    # --- Derinlik-Trim dongusu (kisa sureli, kanatciga pitch trim uretir) ---
+    depth_trim_kp: 0.4
+    depth_trim_ki: 0.02
+    depth_trim_kd: 0.1
+    depth_trim_limit_rad: 0.35        # ~20 derece azami pitch trimi
+
+    # --- Pitch dongusu (kanatcik/elevator) ---
+    pitch_kp: 1.2
+    pitch_ki: 0.05
+    pitch_kd: 0.3
+    fin_pitch_limit: 1.0              # normalize [-1,1]
+
+    # --- Heading/Yaw dongusu (kanatcik/rudder) ---
+    heading_kp: 1.0
+    heading_ki: 0.03
+    heading_kd: 0.25
+    fin_yaw_limit: 1.0                # normalize [-1,1]
+
+    # --- Sephiye dongusu (step motor/siringa, uzun sureli derinlik koruma) ---
+    buoyancy_kp: 0.15
+    buoyancy_ki: 0.01
+    buoyancy_limit: 1.0               # normalize [-1,1]
+
+    # --- Itki ---
+    # DUZELTME: navigation.py'nin v_kalibre=0.9 ile TUTARLI olmasi icin
+    # guncellendi (vehicle_sim k_thrust=1.0 varsayimiyla tam 0.9 m/s verir).
+    nominal_thrust: 0.9               # forward_motion_request=True iken sabit itki [0,1]
+
+    # --- Genel ---
+    depth_rate_lpf_alpha: 0.3
+    control_rate_hz: 20.0
+    nav_status_timeout_s: 2.0
+    explicit_pitch_threshold_rad: 0.05  # bu esigin ustunde hedef pitch varsa
+                                          # (orn. Tirmanis +30 derece), derinlik-trim
+                                          # DEVRE DISI - gudumun acik aci komutuyla catismasin

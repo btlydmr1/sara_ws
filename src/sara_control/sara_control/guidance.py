@@ -166,6 +166,13 @@ class GuidanceNode(Node):
         # /sara/mission_start/motion_permission ciktisini dinler.
         self.declare_parameter('kararlilik_suresi_s', 3.0)           # kosul kesintisiz saglanma suresi
         self.declare_parameter('max_mission_duration_s', 600.0)      # fail-safe: azami gorev suresi
+        self.declare_parameter('g2_ates_sinyali_timeout_s', 30.0)     # YENI: atesleme fazina OZEL, BAGIMSIZ
+                                                                          # zaman asimi - kosullar bu sure icinde
+                                                                          # saglanamazsa (600sn genel sinira kadar
+                                                                          # beklemeden) guvenli sonlandirir. Sartname
+                                                                          # 4.2.1: "birden fazla guvenlik kontrol
+                                                                          # adimi ve fail-safe mekanizmalari" ruhuna
+                                                                          # uygun ek, bagimsiz bir katman.
         self.declare_parameter('nav_status_timeout_s', 2.0)           # fail-safe: navigasyon veri zaman asimi
         self.declare_parameter('startup_grace_period_s', 5.0)          # DUZELTME: baslangicta diger node'lar
                                                                           # henuz yayina baslamadan "nav gecersiz"
@@ -204,6 +211,7 @@ class GuidanceNode(Node):
         self.pitch_tol = self.get_parameter('pitch_tolerance').value
         self.kararlilik_suresi = self.get_parameter('kararlilik_suresi_s').value
         self.max_mission_duration = self.get_parameter('max_mission_duration_s').value
+        self.g2_ates_sinyali_timeout = self.get_parameter('g2_ates_sinyali_timeout_s').value
         self.nav_status_timeout = self.get_parameter('nav_status_timeout_s').value
         self.startup_grace_period = self.get_parameter('startup_grace_period_s').value
 
@@ -412,6 +420,15 @@ class GuidanceNode(Node):
             failsafe_reason = 'navigasyon verisi gecersiz/zaman asimi'
         elif self._mission_elapsed() > self.max_mission_duration:
             failsafe_reason = 'azami gorev suresi asildi'
+        elif (
+            self._phase == PHASE_G2_ATES_SINYALI_GONDER
+            and self._phase_elapsed() > self.g2_ates_sinyali_timeout
+            and not self._launch_request
+        ):
+            # YENI - BAGIMSIZ fail-safe: atesleme kosullari bu fazda
+            # cok uzun suredir saglanamiyorsa (launch_request hic True
+            # olamadiysa), genel 600sn siniri beklemeden guvenli sonlandir.
+            failsafe_reason = f'atesleme kosullari {self.g2_ates_sinyali_timeout:.0f} sn icinde saglanamadi'
 
         if failsafe_reason is not None and self._phase not in TERMINAL_PHASES:
             self.get_logger().error(f'GUVENLI SONLANDIRMA tetiklendi: {failsafe_reason}')

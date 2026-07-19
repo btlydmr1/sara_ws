@@ -1,0 +1,40 @@
+# navigation_params.yaml
+# SARA platformu - Navigasyon Katmani parametreleri
+# Kullanim: launch dosyasinda Node(..., parameters=[<bu_dosyanin_yolu>]) ile eklenir.
+
+navigation_node:
+  ros__parameters:
+    # --- Fiziksel sabitler ---
+    rho: 1000.0                    # su yogunlugu [kg/m^3] - havuz: ~997-1000, deniz: ~1025
+    g: 9.80665                     # yercekimi ivmesi [m/s^2]
+
+    # --- Basinc kalibrasyonu ---
+    pressure_calib_samples: 50     # yuzeyde P0 icin ortalama ornek sayisi
+    lpf_alpha_pressure: 0.2        # basinc LPF katsayisi (0-1, kucuk=daha yumusak)
+
+    # --- IMU filtreleme ---
+    imu_gyro_window: 5             # acisal hiz hareketli ortalama pencere boyu
+    imu_topic: '/sara/imu/data'    # sensor_get_data.py / vehicle_sim.py ile AYNI olmali
+
+    # --- Yaklasik ilerleme (dead-reckoning, GPS/DVL yok) ---
+    # TODO: gercek donanimda saha testiyle KESINLESTIRILMELI. su_reler.pdf
+    # hedef degerlerine (Gorev1: 0.895-1.076 m/s, Gorev2: 0.34-0.40 m/s)
+    # gore 0.9 olarak guncellendi - tek-hiz temsili, faz bazli degil.
+    v_kalibre: 0.9                 # [m/s]
+    enable_xy_estimate: true
+
+    # --- Baglanti/veri zaman asimlari ---
+    pixhawk_timeout_sec: 1.0
+    pressure_timeout_sec: 2.0
+    water_sensor_timeout_sec: 2.0
+    publish_rate_hz: 20.0
+
+    # --- Su sensoru fuzyonu ---
+    water_fusion_mode: 'or'        # 'or' (temkinli) veya 'and'
+
+    # --- Hareket tutarliligi esikleri (lab/su ici testlerle iyilestirilecek) ---
+    accel_still_threshold: 0.6
+    gyro_consistent_threshold: 2.0
+
+    # --- Yaklasik ilerleme icin itki esigi ---
+    thrust_active_threshold: 0.05  # bu esigin altinda itki "yok" sayilir

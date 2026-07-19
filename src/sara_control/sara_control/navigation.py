@@ -120,7 +120,11 @@ class NavigationNode(Node):
         self.declare_parameter('pressure_calib_samples', 50)
         self.declare_parameter('lpf_alpha_pressure', 0.2)
         self.declare_parameter('imu_gyro_window', 5)
-        self.declare_parameter('v_kalibre', 0.5)                  # [m/s] - testle guncellenecek
+        self.declare_parameter('v_kalibre', 0.9)                  # [m/s] - DUZELTME: su_reler.pdf hedef
+                                                                       # hizlarina gore guncellendi (kalibrasyon
+                                                                       # 0.895, ana seyir 1.076 m/s - 0.9 makul
+                                                                       # bir tek-hiz temsili). Gercek donanimda
+                                                                       # saha testiyle kesinlestirilecek.
         self.declare_parameter('enable_xy_estimate', True)
         self.declare_parameter('pixhawk_timeout_sec', 1.0)
         self.declare_parameter('pressure_timeout_sec', 2.0)

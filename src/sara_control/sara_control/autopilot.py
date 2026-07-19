@@ -172,7 +172,13 @@ class AutopilotNode(Node):
         self.declare_parameter('buoyancy_limit', 1.0)             # normalize [-1,1]
 
         # --- Itki ---
-        self.declare_parameter('nominal_thrust', 0.6)              # forward_motion_request=True iken sabit itki [0,1]
+        self.declare_parameter('nominal_thrust', 0.9)              # forward_motion_request=True iken sabit itki [0,1]
+                                                                        # DUZELTME: navigation.py'nin v_kalibre'siyle
+                                                                        # (0.9 m/s) TUTARLI olmasi icin, vehicle_sim'in
+                                                                        # k_thrust=1.0 varsayimiyla birlikte 0.9'a
+                                                                        # cekildi - navigasyonun mesafe tahmini
+                                                                        # ile aracin GERCEKTEN gittigi hiz uyusmali
+                                                                        # (aksi halde yaklasik ilerleme hesabi yanilir).
 
         # --- Genel ---
         self.declare_parameter('depth_rate_lpf_alpha', 0.3)

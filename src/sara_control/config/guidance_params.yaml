@@ -1,0 +1,37 @@
+# guidance_params.yaml
+# SARA platformu - Gudum Katmani parametreleri
+# Kullanim: ros2 run sara_control guidance --ros-args --params-file <bu_dosya>
+#           veya launch dosyasinda parameters=[<bu_dosyanin_yolu>]
+
+guidance_node:
+  ros__parameters:
+    mission_id: 1                     # 1=Seyir Gorevi, 2=Atis Gorevi
+
+    # --- Ortak toleranslar ---
+    dive_target_depth: 2.0            # [m] - Gorev1 madde1 (Gorev2 icin de varsayilan)
+    depth_tolerance: 0.15             # [m]
+    heading_tolerance: 0.10           # [rad] (~5.7 derece)
+    pitch_tolerance: 0.10             # [rad]
+
+    # --- Zamanlama / kararlilik ---
+    kararlilik_suresi_s: 3.0          # kosul kesintisiz saglanma suresi
+    max_mission_duration_s: 600.0     # fail-safe: azami gorev suresi
+    g2_ates_sinyali_timeout_s: 30.0   # YENI: atesleme fazina ozel, bagimsiz zaman asimi
+    nav_status_timeout_s: 2.0         # fail-safe: navigasyon veri zaman asimi
+    startup_grace_period_s: 5.0       # baslangicta nav fail-safe'i erken tetiklenmesin
+    control_rate_hz: 10.0
+
+    # --- Gorev 1 (Seyir Gorevi) ---
+    g1_duz_seyir_distance_m: 10.0        # madde 2: ilk 10 m duz
+    g1_uzaklasma_min_distance_m: 50.0     # madde 4: kiyidan en az 50 m
+    g1_geri_donus_tolerance_m: 2.0         # madde 5: baslangic/bitis cizgisine yakinlik
+
+    # --- Gorev 2 (Atis Gorevi) ---
+    g2_duz_seyir_distance_m: 30.0         # madde 1: 30 m duz git
+    # TODO: SAHA/YARISMA KURALINA GORE TANIMLANMALI - su an test amacli placeholder
+    g2_safe_zone_min_m: 25.0
+    g2_safe_zone_max_m: 35.0
+    g2_tirmanis_target_pitch_deg: 35.0    # sartname: >30 derece, 35 pay icin kullanildi
+    g2_min_launch_pitch_deg: 30.0         # sartname 4.1: ">30 derece" - tek yonlu esik
+    g2_firing_depth: 0.0                  # gercek yuzey (0m) - ara derinlik DEGIL
+    g2_nose_cap_open_duration_s: 3.0      # TODO: gercek servo suresiyle guncellenecek

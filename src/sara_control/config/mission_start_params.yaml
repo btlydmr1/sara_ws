@@ -1,0 +1,9 @@
+# mission_start_params.yaml
+# SARA platformu - Gorev Baslatma / Akustik Uyari Katmani parametreleri
+
+mission_start_node:
+  ros__parameters:
+    motor_inhibit_duration_s: 60.0    # GUVENLIK KURALI - sabit, sartname 4.2
+    acoustic_warning_lead_s: 10.0     # rapor - Tablo 11
+    publish_rate_hz: 10.0
+    auto_start: false                 # true ise start_command beklemeden otomatik baslar (SADECE TEST)

@@ -1,0 +1,25 @@
+# vehicle_sim_params.yaml
+# SARA platformu - Kapali Cevrim Arac Simulatoru parametreleri (SADECE TEST)
+
+vehicle_sim:
+  ros__parameters:
+    # --- Fizik model katsayilari (TODO: gercek arac testleriyle iyilestirilecek) ---
+    k_yaw: 0.6                    # fin_yaw_command -> yaw_rate [rad/s per unit]
+    k_pitch: 0.5                  # fin_pitch_command -> pitch_rate [rad/s per unit]
+    k_buoyancy_pitch: 0.05        # buoyancy_command'in pitch'e yan etkisi
+    # DUZELTME: autopilot'un nominal_thrust=0.9 degeriyle carpildiginda
+    # TAM 0.9 m/s versin diye 1.0'a cekildi (navigation.py v_kalibre=0.9
+    # ile tutarlilik icin - bkz. navigation_params.yaml).
+    k_thrust: 1.0                 # thrust_command -> ileri hiz [m/s per unit]
+    k_buoyancy_depth: 0.25        # buoyancy_command -> derinlik degisim hizi [m/s per unit]
+    pitch_limit_rad: 1.2          # fiziksel pitch siniri (~69 derece)
+    max_depth: 10.0               # havuz/deniz azami derinligi (guvenlik siniri, simulasyonda)
+    vehicle_length_m: 0.996       # arac boyu [m] - burun/kuyruk sensor ayrimi icin (sartname)
+
+    # --- Sensor simulasyon parametreleri ---
+    rho: 1000.0
+    g: 9.80665
+    surface_pressure_pa: 101325.0
+    pressure_noise_std: 15.0
+    imu_noise_std: 0.01
+    publish_rate_hz: 20.0
