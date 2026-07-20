@@ -159,6 +159,10 @@ class GuidanceNode(Node):
         self.declare_parameter('dive_target_depth', 2.0)          # [m] - Gorev1 madde1 (Gorev2 icin de varsayilan)
         self.declare_parameter('depth_tolerance', 0.15)             # [m]
         self.declare_parameter('heading_tolerance', 0.10)           # [rad] (~5.7 derece)
+                                                                        # NOT: 0.07'ye sikilastirilmisti ama PID
+                                                                        # (henuz ayarlanmadi) bu hassasiyete
+                                                                        # ulasamadi - GERI ALINDI, kanitlanmis
+                                                                        # 0.10 degerine donuldu.
         self.declare_parameter('pitch_tolerance', 0.10)             # [rad]
         # NOT: motor_inhibit_duration_s / acoustic_warning_lead_s artik BU node'da
         # DEGIL - ayri "mission_start_node" (Gorev Baslatma/Akustik Uyari Katmani,
@@ -185,6 +189,12 @@ class GuidanceNode(Node):
         self.declare_parameter('g1_yavaslama_baslangic_m', 40.0)          # KTR: 40m'den sonra yavasla (donus oncesi)
         self.declare_parameter('g1_yaklasma_baslangic_m', 15.0)            # KTR: cizgiye ~15m kalinca yavasla
         self.declare_parameter('g1_geri_donus_tolerance_m', 2.0)          # madde 5: baslangic/bitis cizgisine yakinlik
+                                                                              # NOT: 1.0'a sikilastirilmisti ama PID
+                                                                              # (henuz ayarlanmadi) bu hassasiyete
+                                                                              # ulasamadi, faz 170+ saniye takildi -
+                                                                              # GERI ALINDI, kanitlanmis 2.0 degerine
+                                                                              # donuldu. PID gercek testlerle
+                                                                              # iyilestirildiginde tekrar sikilastirilabilir.
 
         # --- YENI: Faz-bazli hedef hizlar (KTR'den) - ARTIK TEK SABIT HIZ
         # YOK, her faz kendi gercek hedef hizini yayinlar. Otopilot, bu

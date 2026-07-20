@@ -10,7 +10,7 @@ guidance_node:
     # --- Ortak toleranslar ---
     dive_target_depth: 2.0            # [m] - Gorev1 madde1 (Gorev2 icin de varsayilan)
     depth_tolerance: 0.15             # [m]
-    heading_tolerance: 0.10           # [rad] (~5.7 derece)
+    heading_tolerance: 0.10           # [rad] (~5.7 derece) - kanitlanmis deger
     pitch_tolerance: 0.10             # [rad]
 
     # --- Zamanlama / kararlilik ---
@@ -26,7 +26,7 @@ guidance_node:
     g1_uzaklasma_min_distance_m: 50.0     # madde 4: kiyidan en az 50 m
     g1_yavaslama_baslangic_m: 40.0          # KTR: 40m'den sonra yavasla (donus oncesi)
     g1_yaklasma_baslangic_m: 15.0            # KTR: cizgiye ~15m kalinca yavasla
-    g1_geri_donus_tolerance_m: 2.0         # madde 5: baslangic/bitis cizgisine yakinlik
+    g1_geri_donus_tolerance_m: 2.0         # kanitlanmis deger, PID ayarlanmadan sikilastirilmadi
 
     # --- YENI: Faz-bazli hedef hizlar (KTR'den dogrulanan gercek degerler) ---
     max_calibrated_speed_ms: 1.076   # tam itkide (thrust=1.0) ulasilan hiz
