@@ -40,6 +40,7 @@ BAGLANMAMALIDIR.
 Girdi:
     /sara/guidance/target_pose             (geometry_msgs/PoseStamped)
     /sara/guidance/forward_motion_request  (std_msgs/Bool)
+    /sara/guidance/target_speed            (std_msgs/Float64, m/s) -- YENI: faz-bazli hedef hiz
     /sara/guidance/mission_phase           (std_msgs/String, sadece telemetri)
     /sara/navigation/odom                  (nav_msgs/Odometry)
     /sara/navigation/status                (diagnostic_msgs/DiagnosticStatus)
@@ -172,13 +173,12 @@ class AutopilotNode(Node):
         self.declare_parameter('buoyancy_limit', 1.0)             # normalize [-1,1]
 
         # --- Itki ---
-        self.declare_parameter('nominal_thrust', 0.9)              # forward_motion_request=True iken sabit itki [0,1]
-                                                                        # DUZELTME: navigation.py'nin v_kalibre'siyle
-                                                                        # (0.9 m/s) TUTARLI olmasi icin, vehicle_sim'in
-                                                                        # k_thrust=1.0 varsayimiyla birlikte 0.9'a
-                                                                        # cekildi - navigasyonun mesafe tahmini
-                                                                        # ile aracin GERCEKTEN gittigi hiz uyusmali
-                                                                        # (aksi halde yaklasik ilerleme hesabi yanilir).
+        self.declare_parameter('max_calibrated_speed_ms', 1.076)   # DUZELTME: artik SABIT nominal_thrust
+                                                                        # DEGIL - gudumun her faz icin gonderdigi
+                                                                        # GERCEK hedef hiz (target_speed) bu
+                                                                        # degere oranlanarak itki seviyesi
+                                                                        # uretiliyor (KTR'deki 0.895-1.076 m/s
+                                                                        # arasindaki buyuk faz farkini yansitmak icin).
 
         # --- Genel ---
         self.declare_parameter('depth_rate_lpf_alpha', 0.3)
@@ -196,7 +196,7 @@ class AutopilotNode(Node):
         fin_yaw_limit = self.get_parameter('fin_yaw_limit').value
         buoyancy_limit = self.get_parameter('buoyancy_limit').value
 
-        self.nominal_thrust = self.get_parameter('nominal_thrust').value
+        self.max_calibrated_speed = self.get_parameter('max_calibrated_speed_ms').value
         self.explicit_pitch_threshold = self.get_parameter('explicit_pitch_threshold_rad').value
         self.nav_status_timeout = self.get_parameter('nav_status_timeout_s').value
         rate = float(self.get_parameter('control_rate_hz').value)
@@ -235,6 +235,7 @@ class AutopilotNode(Node):
         self._target_heading = 0.0
         self._target_pitch = 0.0
         self._forward_motion_request = False
+        self._target_speed = 0.0  # YENI: gudumden gelen faz-bazli hedef hiz [m/s]
         self._mission_phase = 'BILINMIYOR'
 
         # Navigasyondan gelen anlik degerler
@@ -257,6 +258,7 @@ class AutopilotNode(Node):
         # ================= Abonelikler =================
         self.create_subscription(PoseStamped, '/sara/guidance/target_pose', self._on_target_pose, 10)
         self.create_subscription(Bool, '/sara/guidance/forward_motion_request', self._on_forward_motion, 10)
+        self.create_subscription(Float64, '/sara/guidance/target_speed', self._on_target_speed, 10)  # YENI
         self.create_subscription(String, '/sara/guidance/mission_phase', self._on_mission_phase, 10)
         self.create_subscription(Odometry, '/sara/navigation/odom', self._on_odom, 10)
         self.create_subscription(DiagnosticStatus, '/sara/navigation/status', self._on_nav_status, 10)
@@ -287,6 +289,9 @@ class AutopilotNode(Node):
 
     def _on_forward_motion(self, msg: Bool):
         self._forward_motion_request = msg.data
+
+    def _on_target_speed(self, msg: Float64):
+        self._target_speed = msg.data
 
     def _on_mission_phase(self, msg: String):
         self._mission_phase = msg.data
@@ -385,8 +390,14 @@ class AutopilotNode(Node):
             # --- Sephiye PID -> step motor/siringa (uzun sureli derinlik koruma) ---
             buoyancy = self.pid_buoyancy.update(depth_error, depth_rate, dt)
 
-            # --- Itki: gorev fazina gore (gudumun forward_motion_request'i) ---
-            thrust = self.nominal_thrust if self._forward_motion_request else 0.0
+            # --- Itki: gorev fazina gore (gudumun forward_motion_request'i +
+            # target_speed'i). DUZELTME: artik SABIT nominal_thrust DEGIL,
+            # gudumun gonderdigi GERCEK hedef hiz max_calibrated_speed'e
+            # oranlanarak itki seviyesi uretiliyor (0-1 araliginda sinirli).
+            if self._forward_motion_request and self.max_calibrated_speed > 0.0:
+                thrust = max(0.0, min(1.0, self._target_speed / self.max_calibrated_speed))
+            else:
+                thrust = 0.0
 
         self._was_safe = safe
         self._publish_all(safe, thrust, fin_pitch, fin_yaw, buoyancy)
@@ -419,6 +430,7 @@ class AutopilotNode(Node):
             KeyValue(key='depth_error_m', value=f'{self._target_depth - self._depth:.3f}'),
             KeyValue(key='heading_error_rad', value=f'{wrap_pi(self._target_heading - self._heading):.3f}'),
             KeyValue(key='pitch_error_rad', value=f'{self._target_pitch - self._pitch:.3f}'),
+            KeyValue(key='target_speed_ms', value=f'{self._target_speed:.3f}'),
             KeyValue(key='thrust_request', value=f'{thrust:.2f}'),
             KeyValue(key='fin_pitch_request', value=f'{fin_pitch:.2f}'),
             KeyValue(key='fin_yaw_request', value=f'{fin_yaw:.2f}'),

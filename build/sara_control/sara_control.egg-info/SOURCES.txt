@@ -1,6 +1,12 @@
 package.xml
 setup.cfg
 setup.py
+config/autopilot_params.yaml
+config/guidance_params.yaml
+config/mission_start_params.yaml
+config/navigation_params.yaml
+config/safety_params.yaml
+config/vehicle_sim_params.yaml
 launch/sara_sim_launch.py
 launch/sara_system.launch.py
 resource/sara_control

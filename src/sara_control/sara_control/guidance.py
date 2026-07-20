@@ -64,7 +64,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, String, Float64
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped
 from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
@@ -182,7 +182,18 @@ class GuidanceNode(Node):
         # --- Gorev 1 (Seyir) parametreleri ---
         self.declare_parameter('g1_duz_seyir_distance_m', 10.0)         # madde 2: ilk 10 m duz
         self.declare_parameter('g1_uzaklasma_min_distance_m', 50.0)      # madde 4: kiyidan en az 50 m
+        self.declare_parameter('g1_yavaslama_baslangic_m', 40.0)          # KTR: 40m'den sonra yavasla (donus oncesi)
+        self.declare_parameter('g1_yaklasma_baslangic_m', 15.0)            # KTR: cizgiye ~15m kalinca yavasla
         self.declare_parameter('g1_geri_donus_tolerance_m', 2.0)          # madde 5: baslangic/bitis cizgisine yakinlik
+
+        # --- YENI: Faz-bazli hedef hizlar (KTR'den) - ARTIK TEK SABIT HIZ
+        # YOK, her faz kendi gercek hedef hizini yayinlar. Otopilot, bu
+        # hizi max_calibrated_speed'e oranlayarak itki seviyesi uretir.
+        self.declare_parameter('max_calibrated_speed_ms', 1.076)   # tam itkide (thrust=1.0) ulasilan hiz
+        self.declare_parameter('g1_calib_speed_ms', 0.895)           # KTR: 0-10m kalibrasyon hizi
+        self.declare_parameter('g1_cruise_speed_ms', 1.076)           # KTR: 10-40m ana seyir / geri donus hizi
+        self.declare_parameter('g2_dive_speed_ms', 0.400)              # KTR: acili kontrollu dalis hizi
+        self.declare_parameter('g2_ascend_speed_ms', 0.340)             # KTR: kontrollu yuzeye cikis hizi
 
         # --- Gorev 2 (Atis) parametreleri ---
         self.declare_parameter('g2_duz_seyir_distance_m', 30.0)          # madde 1: 30 m duz git
@@ -217,7 +228,15 @@ class GuidanceNode(Node):
 
         self.g1_duz_seyir_distance = self.get_parameter('g1_duz_seyir_distance_m').value
         self.g1_uzaklasma_min_distance = self.get_parameter('g1_uzaklasma_min_distance_m').value
+        self.g1_yavaslama_baslangic_m = self.get_parameter('g1_yavaslama_baslangic_m').value
+        self.g1_yaklasma_baslangic_m = self.get_parameter('g1_yaklasma_baslangic_m').value
         self.g1_geri_donus_tolerance = self.get_parameter('g1_geri_donus_tolerance_m').value
+
+        self.max_calibrated_speed = self.get_parameter('max_calibrated_speed_ms').value
+        self.g1_calib_speed = self.get_parameter('g1_calib_speed_ms').value
+        self.g1_cruise_speed = self.get_parameter('g1_cruise_speed_ms').value
+        self.g2_dive_speed = self.get_parameter('g2_dive_speed_ms').value
+        self.g2_ascend_speed = self.get_parameter('g2_ascend_speed_ms').value
 
         self.g2_duz_seyir_distance = self.get_parameter('g2_duz_seyir_distance_m').value
         self.g2_safe_zone_min = self.get_parameter('g2_safe_zone_min_m').value
@@ -265,6 +284,7 @@ class GuidanceNode(Node):
         self._target_heading = 0.0
         self._target_pitch = 0.0
         self._forward_motion = False
+        self._target_speed = 0.0  # YENI: faz-bazli hedef hiz [m/s]
         self._nose_cap_open_request = False
         self._launch_request = False
 
@@ -300,6 +320,7 @@ class GuidanceNode(Node):
         self._target_pub = self.create_publisher(PoseStamped, '/sara/guidance/target_pose', 10)
         self._phase_pub = self.create_publisher(String, '/sara/guidance/mission_phase', 10)
         self._forward_pub = self.create_publisher(Bool, '/sara/guidance/forward_motion_request', 10)
+        self._speed_pub = self.create_publisher(Float64, '/sara/guidance/target_speed', 10)  # YENI
         self._nose_cap_pub = self.create_publisher(Bool, '/sara/guidance/nose_cap_open_request', 10)
         self._launch_pub = self.create_publisher(Bool, '/sara/guidance/launch_request', 10)
         self._status_pub = self.create_publisher(DiagnosticStatus, '/sara/guidance/status', 10)
@@ -387,8 +408,12 @@ class GuidanceNode(Node):
 
     def _goto_phase(self, phase: int):
         if phase != self._phase:
+            phase_duration = self._phase_elapsed()      # bu fazda ne kadar kaldi
+            mission_elapsed = self._mission_elapsed()     # gorev basindan itibaren toplam sure
             self.get_logger().info(
-                f'Gorev fazi gecisi: {PHASE_NAMES[self._phase]} -> {PHASE_NAMES[phase]}'
+                f'Gorev fazi gecisi: {PHASE_NAMES[self._phase]} -> {PHASE_NAMES[phase]} '
+                f'| bu fazda gecen sure: {phase_duration:.2f} sn '
+                f'| toplam gorev suresi: {mission_elapsed:.2f} sn'
             )
             self._phase = phase
             self._phase_start_time = self.get_clock().now()
@@ -511,10 +536,12 @@ class GuidanceNode(Node):
 
     # ---------------------------------------------------------- GOREV 1
     def _run_g1_duz_seyir(self):
+        """KTR: '0-10m kalibrasyon' fazi - dusuk/kalibrasyon hizi (0.895 m/s)."""
         self._target_depth = self.dive_target_depth
         self._target_heading = self._reference_heading
         self._target_pitch = 0.0
         self._forward_motion = True
+        self._target_speed = self.g1_calib_speed  # YENI: faz-bazli hiz
 
         if self._approx_distance() >= self.g1_duz_seyir_distance:
             self._race_timer_start = self.get_clock().now()
@@ -522,19 +549,34 @@ class GuidanceNode(Node):
             self._goto_phase(PHASE_G1_UZAKLASMA_50M)
 
     def _run_g1_uzaklasma(self):
+        """KTR Tablo 1'e tam uyum: '10-40m ana seyir' (1.076 m/s) + '40-50m
+        donus oncesi yavaslama' (0.895 m/s) - TEK fazda, mesafeye gore
+        DAHILI hiz gecisi ile (40m sinirina kadar hizli, sonrasi yavas)."""
         self._target_depth = self.dive_target_depth
         self._target_heading = self._reference_heading
         self._target_pitch = 0.0
         self._forward_motion = True
 
-        if self._approx_distance() >= self.g1_uzaklasma_min_distance:
+        dist = self._approx_distance()
+        if dist < self.g1_yavaslama_baslangic_m:
+            self._target_speed = self.g1_cruise_speed   # 10-40m: ana seyir (1.076 m/s)
+        else:
+            self._target_speed = self.g1_calib_speed     # 40-50m: donus oncesi yavaslama (0.895 m/s)
+
+        if dist >= self.g1_uzaklasma_min_distance:
             self._goto_phase(PHASE_G1_GERI_DONUS)
 
     def _run_g1_geri_donus(self):
         """Madde 5: baslangic/bitis cizgisine geri don.
         DUZELTME (Teknik Sartname 6.1.1): donus hedefi aracin 0m'deki
         cikis noktasi DEGIL, "kiyidan 10 metre uzaklikta bir baslangic/bitis
-        cizgisi" - yani g1_duz_seyir_distance (10m) mesafesindeki cizgi."""
+        cizgisi" - yani g1_duz_seyir_distance (10m) mesafesindeki cizgi.
+
+        KTR Tablo 1'e tam uyum: 'U donus kontrollu manevra' (0.895 m/s,
+        heading henuz hedefe hizalanmamisken) + 'Geri donus hizli seyir'
+        (1.076 m/s, hizalandiktan sonra, hatti henuz uzaktayken) + 'Kiyiya
+        yaklasma' (0.895 m/s, hatta yaklasinca) - TEK fazda, DAHILI hiz
+        gecisi ile."""
         return_heading = wrap_pi(self._reference_heading + math.pi)
         self._target_depth = self.dive_target_depth
         self._target_heading = return_heading
@@ -542,6 +584,15 @@ class GuidanceNode(Node):
         self._forward_motion = True
 
         distance_to_finish_line = abs(self._approx_distance() - self.g1_duz_seyir_distance)
+        heading_aligned = abs(self._heading_error_to(return_heading)) < self.heading_tol
+
+        if not heading_aligned:
+            self._target_speed = self.g1_calib_speed      # U donus kontrollu manevra (0.895 m/s)
+        elif distance_to_finish_line > self.g1_yaklasma_baslangic_m:
+            self._target_speed = self.g1_cruise_speed       # Geri donus hizli seyir (1.076 m/s)
+        else:
+            self._target_speed = self.g1_calib_speed          # Kiyiya yaklasma (0.895 m/s)
+
         distance_ok = distance_to_finish_line <= self.g1_geri_donus_tolerance
         if self._conditions_held(distance_ok):
             self._goto_phase(PHASE_G1_TAMAMLANDI_YUZEYDE_BEKLE)
@@ -555,19 +606,23 @@ class GuidanceNode(Node):
 
     # ---------------------------------------------------------- GOREV 2
     def _run_g2_duz_seyir(self):
+        """KTR: 'Dalis (30 derece)' fazi - acili kontrollu dalis hizi (0.400 m/s)."""
         self._target_depth = self.dive_target_depth
         self._target_heading = self._reference_heading
         self._target_pitch = 0.0
         self._forward_motion = True
+        self._target_speed = self.g2_dive_speed  # YENI: faz-bazli hiz
 
         if self._approx_distance() >= self.g2_duz_seyir_distance:
             self._goto_phase(PHASE_G2_GUVENLI_ATIS_BOLGESI)
 
     def _run_g2_guvenli_atis_bolgesi(self):
+        """KTR: 'Ateşleme öncesi stabil bekleme' fazi - hiz 0 (forward_motion zaten False)."""
         self._target_depth = self.dive_target_depth
         self._target_heading = self._reference_heading
         self._target_pitch = 0.0
         self._forward_motion = False
+        self._target_speed = 0.0  # YENI: stabil bekleme, hareket yok
 
         dist = self._approx_distance()
         in_zone = self.g2_safe_zone_min <= dist <= self.g2_safe_zone_max
@@ -577,9 +632,11 @@ class GuidanceNode(Node):
             self._goto_phase(PHASE_G2_TIRMANIS_30_DERECE)
 
     def _run_g2_tirmanis(self):
+        """KTR: 'Yuzeye cikis (30 derece)' fazi - kontrollu cikis hizi (0.340 m/s)."""
         self._target_depth = self.g2_firing_depth
         self._target_pitch = self.g2_tirmanis_target_pitch
         self._forward_motion = True
+        self._target_speed = self.g2_ascend_speed  # YENI: faz-bazli hiz
 
         # DUZELTME (Sartname 4.1): ">30 derece" sarti - TEK YONLU esik, simetrik
         # tolerans DEGIL (simetrik tolerans 30 derecenin ALTINI da kabul ederdi).
@@ -682,6 +739,10 @@ class GuidanceNode(Node):
         fwd = Bool()
         fwd.data = bool(self._forward_motion)
         self._forward_pub.publish(fwd)
+
+        speed_msg = Float64()
+        speed_msg.data = float(self._target_speed) if self._forward_motion else 0.0
+        self._speed_pub.publish(speed_msg)
 
         cap = Bool()
         cap.data = bool(self._nose_cap_open_request)

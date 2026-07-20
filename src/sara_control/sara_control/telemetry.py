@@ -78,7 +78,7 @@ CSV_COLUMNS = [
     'approx_x_m', 'approx_y_m', 'approx_distance_m',
     'surface_detected', 'nav_status_level',
     'target_depth_m', 'target_heading_deg', 'target_pitch_deg',
-    'forward_motion_request', 'nose_cap_open_request', 'launch_request',
+    'forward_motion_request', 'target_speed_ms', 'nose_cap_open_request', 'launch_request',
     'guidance_status_level',
     'motion_permission', 'acoustic_warning', 'mission_start_status_level',
     'thrust_request', 'fin_pitch_request', 'fin_yaw_request',
@@ -129,6 +129,7 @@ class TelemetryNode(Node):
         self._target_heading = 0.0
         self._target_pitch = 0.0
         self._forward_motion_request = False
+        self._target_speed = 0.0  # YENI
         self._nose_cap_open_request = False
         self._launch_request = False
         self._guidance_status_level = DiagnosticStatus.STALE
@@ -169,6 +170,8 @@ class TelemetryNode(Node):
                                   lambda m: self._set('_mission_phase', m.data), 10)
         self.create_subscription(Bool, '/sara/guidance/forward_motion_request',
                                   lambda m: self._set('_forward_motion_request', m.data), 10)
+        self.create_subscription(Float64, '/sara/guidance/target_speed',
+                                  lambda m: self._set('_target_speed', m.data), 10)  # YENI
         self.create_subscription(Bool, '/sara/guidance/nose_cap_open_request',
                                   lambda m: self._set('_nose_cap_open_request', m.data), 10)
         self.create_subscription(Bool, '/sara/guidance/launch_request',
@@ -269,6 +272,7 @@ class TelemetryNode(Node):
             'target_heading_deg': f'{math.degrees(self._target_heading):.1f}',
             'target_pitch_deg': f'{math.degrees(self._target_pitch):.1f}',
             'forward_motion_request': self._forward_motion_request,
+            'target_speed_ms': f'{self._target_speed:.3f}',
             'nose_cap_open_request': self._nose_cap_open_request,
             'launch_request': self._launch_request,
             'guidance_status_level': level_to_str(self._guidance_status_level),

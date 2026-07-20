@@ -24,7 +24,16 @@ guidance_node:
     # --- Gorev 1 (Seyir Gorevi) ---
     g1_duz_seyir_distance_m: 10.0        # madde 2: ilk 10 m duz
     g1_uzaklasma_min_distance_m: 50.0     # madde 4: kiyidan en az 50 m
+    g1_yavaslama_baslangic_m: 40.0          # KTR: 40m'den sonra yavasla (donus oncesi)
+    g1_yaklasma_baslangic_m: 15.0            # KTR: cizgiye ~15m kalinca yavasla
     g1_geri_donus_tolerance_m: 2.0         # madde 5: baslangic/bitis cizgisine yakinlik
+
+    # --- YENI: Faz-bazli hedef hizlar (KTR'den dogrulanan gercek degerler) ---
+    max_calibrated_speed_ms: 1.076   # tam itkide (thrust=1.0) ulasilan hiz
+    g1_calib_speed_ms: 0.895          # KTR: 0-10m kalibrasyon hizi
+    g1_cruise_speed_ms: 1.076          # KTR: 10-40m ana seyir / geri donus hizi
+    g2_dive_speed_ms: 0.400            # KTR: acili kontrollu dalis hizi
+    g2_ascend_speed_ms: 0.340           # KTR: kontrollu yuzeye cikis hizi
 
     # --- Gorev 2 (Atis Gorevi) ---
     g2_duz_seyir_distance_m: 30.0         # madde 1: 30 m duz git

@@ -78,11 +78,10 @@ class VehicleSimNode(Node):
         self.declare_parameter('k_yaw', 0.6)                  # fin_yaw_command -> yaw_rate [rad/s per unit]
         self.declare_parameter('k_pitch', 0.5)                 # fin_pitch_command -> pitch_rate [rad/s per unit]
         self.declare_parameter('k_buoyancy_pitch', 0.05)        # buoyancy_command'in pitch'e yan etkisi
-        self.declare_parameter('k_thrust', 1.0)                  # thrust_command -> ileri hiz [m/s per unit]
-                                                                     # DUZELTME: autopilot'un nominal_thrust=0.9
-                                                                     # degeriyle carpildiginda TAM 0.9 m/s versin
-                                                                     # diye 1.0'a cekildi - navigation.py'nin
-                                                                     # v_kalibre=0.9 varsayimiyla tutarli olmasi icin.
+        self.declare_parameter('k_thrust', 1.076)                # DUZELTME: navigation.py + autopilot.py'nin
+                                                                       # max_calibrated_speed_ms=1.076 degeriyle
+                                                                       # TUTARLI olmasi icin guncellendi (thrust=1.0
+                                                                       # -> 1.076 m/s, KTR'deki ana seyir hizi).
         self.declare_parameter('k_buoyancy_depth', 0.25)          # buoyancy_command -> derinlik degisim hizi [m/s per unit]
         self.declare_parameter('pitch_limit_rad', 1.2)              # fiziksel pitch siniri (~69 derece)
         self.declare_parameter('max_depth', 10.0)                    # havuz/deniz azami derinligi (guvenlik siniri, simulasyonda)

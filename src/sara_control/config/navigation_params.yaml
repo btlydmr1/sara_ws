@@ -17,10 +17,12 @@ navigation_node:
     imu_topic: '/sara/imu/data'    # sensor_get_data.py / vehicle_sim.py ile AYNI olmali
 
     # --- Yaklasik ilerleme (dead-reckoning, GPS/DVL yok) ---
-    # TODO: gercek donanimda saha testiyle KESINLESTIRILMELI. su_reler.pdf
-    # hedef degerlerine (Gorev1: 0.895-1.076 m/s, Gorev2: 0.34-0.40 m/s)
-    # gore 0.9 olarak guncellendi - tek-hiz temsili, faz bazli degil.
-    v_kalibre: 0.9                 # [m/s]
+    # DUZELTME: artik SABIT v_kalibre ile DEGIL, GERCEK itki seviyesiyle
+    # ORANTILI hesaplaniyor (hiz_tahmini = thrust_command * max_calibrated_speed_ms).
+    # KTR'deki ana seyir hizi 1.076 m/s (gorsel tablodan dogrulandi -
+    # onceki "3.076" degeri yanlis bir elle-okuma hatasiydi, duzeltildi).
+    max_calibrated_speed_ms: 1.076  # tam itkide (thrust=1.0) ulasilan hiz - KTR ana seyir hizi
+    v_kalibre: 0.9                   # ARTIK SADECE yedek/eski-uyumluluk degeri (kullanilmiyor)
     enable_xy_estimate: true
 
     # --- Baglanti/veri zaman asimlari ---

@@ -31,9 +31,10 @@ autopilot_node:
     buoyancy_limit: 1.0               # normalize [-1,1]
 
     # --- Itki ---
-    # DUZELTME: navigation.py'nin v_kalibre=0.9 ile TUTARLI olmasi icin
-    # guncellendi (vehicle_sim k_thrust=1.0 varsayimiyla tam 0.9 m/s verir).
-    nominal_thrust: 0.9               # forward_motion_request=True iken sabit itki [0,1]
+    # DUZELTME: artik SABIT nominal_thrust DEGIL - gudumun her faz icin
+    # gonderdigi GERCEK hedef hiz (target_speed) bu degere oranlanarak
+    # itki seviyesi uretiliyor.
+    max_calibrated_speed_ms: 1.076    # tam itkide (thrust=1.0) ulasilan hiz - KTR ana seyir hizi
 
     # --- Genel ---
     depth_rate_lpf_alpha: 0.3

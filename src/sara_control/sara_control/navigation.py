@@ -120,11 +120,15 @@ class NavigationNode(Node):
         self.declare_parameter('pressure_calib_samples', 50)
         self.declare_parameter('lpf_alpha_pressure', 0.2)
         self.declare_parameter('imu_gyro_window', 5)
-        self.declare_parameter('v_kalibre', 0.9)                  # [m/s] - DUZELTME: su_reler.pdf hedef
-                                                                       # hizlarina gore guncellendi (kalibrasyon
-                                                                       # 0.895, ana seyir 1.076 m/s - 0.9 makul
-                                                                       # bir tek-hiz temsili). Gercek donanimda
-                                                                       # saha testiyle kesinlestirilecek.
+        self.declare_parameter('max_calibrated_speed_ms', 1.076)  # DUZELTME: KTR'deki ana seyir hizi
+                                                                       # (tam itkide, thrust=1.0). Yaklasik
+                                                                       # ilerleme artik SABIT v_kalibre yerine
+                                                                       # GERCEK itki seviyesiyle ORANTILI
+                                                                       # hesaplaniyor - fazlar arasi buyuk hiz
+                                                                       # farklarini (0.895 vs 1.076 m/s) dogru
+                                                                       # yansitmasi icin.
+        self.declare_parameter('v_kalibre', 0.9)                  # [m/s] - ARTIK SADECE thrust_command hic
+                                                                       # gelmediyse (eski/uyumluluk) yedek deger
         self.declare_parameter('enable_xy_estimate', True)
         self.declare_parameter('pixhawk_timeout_sec', 1.0)
         self.declare_parameter('pressure_timeout_sec', 2.0)
@@ -146,6 +150,7 @@ class NavigationNode(Node):
         self.g = self.get_parameter('g').value
         self.calib_samples_needed = int(self.get_parameter('pressure_calib_samples').value)
         self.v_kalibre = self.get_parameter('v_kalibre').value
+        self.max_calibrated_speed = self.get_parameter('max_calibrated_speed_ms').value
         self.enable_xy = self.get_parameter('enable_xy_estimate').value
         self.pixhawk_timeout = self.get_parameter('pixhawk_timeout_sec').value
         self.pressure_timeout = self.get_parameter('pressure_timeout_sec').value
@@ -179,6 +184,7 @@ class NavigationNode(Node):
         self._yaw_rate = 0.0
         self._motion_consistent = False
         self._thrust_active = False
+        self._last_thrust_value = 0.0
 
         self._water_1 = None
         self._water_2 = None
@@ -266,6 +272,7 @@ class NavigationNode(Node):
 
     def _on_thrust_command(self, msg: Float64):
         self._thrust_active = abs(msg.data) > self.thrust_active_threshold
+        self._last_thrust_value = msg.data
 
     # ======================================================================
     # Sensor callback'leri
@@ -341,11 +348,20 @@ class NavigationNode(Node):
         # DUZELTME: sadece IMU stabil diye degil, GERCEKTEN itki uygulaniyorken
         # (thrust_active) ilerleme biriktir - aksi halde durgun araç bile
         # zamanla "ilerlemis" gibi hesaplanir (ivmeolcer sabit hizi tespit edemez).
+        #
+        # DUZELTME 2 (onemli): ARTIK SABIT v_kalibre ile DEGIL, GERCEK itki
+        # seviyesiyle ORANTILI hesaplaniyor: hiz_tahmini = thrust_command *
+        # max_calibrated_speed. Boylece gudumun farkli fazlarda farkli itki
+        # seviyeleri istemesi (orn. yavas kalibrasyon fazi %29 itki, hizli
+        # seyir fazi %100 itki) doğru mesafe tahminine yansir - KTR'deki
+        # 0.895 m/s ile 1.076 m/s arasindaki BUYUK fark artik dogru temsil
+        # ediliyor (eski sabit-hiz varsayimi bunu yapamiyordu).
         if self._motion_consistent and self._thrust_active and dt > 0.0:
-            self._approx_distance += self.v_kalibre * dt
+            estimated_speed = abs(self._last_thrust_value) * self.max_calibrated_speed
+            self._approx_distance += estimated_speed * dt
             if self.enable_xy:
-                self._approx_x += self.v_kalibre * math.cos(self._heading) * dt
-                self._approx_y += self.v_kalibre * math.sin(self._heading) * dt
+                self._approx_x += estimated_speed * math.cos(self._heading) * dt
+                self._approx_y += estimated_speed * math.sin(self._heading) * dt
 
         # --- Sensor "canlilik" kontrolleri (henuz baglanmamis sensorler icin) ---
         pixhawk_connected = self._is_fresh(self._last_imu_stamp, self.pixhawk_timeout)
