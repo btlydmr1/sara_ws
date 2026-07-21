@@ -21,8 +21,8 @@ KULLANIM:
 
 ARGUMANLAR:
     mission_id     : '1' (Seyir Gorevi) veya '2' (Atis Gorevi). Varsayilan: '1'
-    mode           : 'test' (vehicle_sim) veya 'hardware' (gercek sensor/eyleyici
-                     suruculeri). Varsayilan: 'test'
+    mode           : 'test' (vehicle_sim) veya 'hardware' (gercek Arduino koprusu)
+                     . Varsayilan: 'test'
     enable_telemetry : CSV telemetri kaydini ac/kapat. Varsayilan: 'true'
     log_directory  : telemetri CSV'lerinin kaydedilecegi klasor.
                      Varsayilan: '~/sara_logs'
@@ -31,6 +31,32 @@ ARGUMANLAR:
                      deger, YARISMADA/SAHADA DEGISTIRILMEMELIDIR). Sadece
                      hizli iterasyon icin dusurulebilir bir launch
                      argumani olarak sunulmustur.
+    arduino_port   : Arduino Uno'nun USB seri portu. Varsayilan: '/dev/ttyUSB0'
+    arduino_baud   : Seri haberlesme hizi. Varsayilan: '115200'
+
+DUZELTME (v3 - Arduino donanim entegrasyonu): Ekip, gercek donanimi
+Jetson<->Arduino Uno<->PCA9685 seri koprusu uzerinden baglamistir (bkz.
+arduino_bridge.py). Bu, ONCEKI (v2) hardware mimarisini (Jetson'dan
+DOGRUDAN I2C ile PCA9685'e baglanma) GECERSIZ KILAR - artik hardware
+modunda actuator_driver_node VE sensor_get_data_node ARTIK
+BASLATILMIYOR, bunlarin YERINE TEK bir arduino_bridge_node calisiyor:
+    - Eyleyici ciktisi: /sara/control/thrust_command, fin_command,
+      nose_cap_command (safety.py'den) -> seri protokol -> Arduino
+    - Sensor girdisi: su sensorleri (Jetson GPIO 15/16, Arduino'dan
+      BAGIMSIZ) -> /sara/water_detect_1/_2; basinc (Arduino'nun SEN0257
+      okumasindan, telemetri satirindan parse edilir) -> /sara/pressure
+    - IMU hala mavros/Pixhawk'tan (bu koprü IMU'ya DOKUNMAZ, sadece
+      okumaz - autopilot_node zaten /sara/navigation/odom uzerinden
+      dolayli olarak IMU'yu kullanir, navigation_node'un kendisi IMU'yu
+      /sara/imu/data'dan okur - bu topic'in nasil doldurulacagi (mavros
+      koprusu) AYRI bir konu, bu launch dosyasinin kapsami DISINDA;
+      hardware modunda calistirmadan ONCE navigation_params.yaml'daki
+      imu_topic parametresinin dogru kaynaga isaret ettigini dogrulayin)
+    - actuator_driver.py, water_sensor_driver.py, pressure_sensor_driver.py,
+      sensor_get_data.py dosyalari SILINMEDI (farkli bir donanim
+      revizyonunda - dogrudan I2C PCA9685 - tekrar kullanilabilir), ama
+      bu Arduino tabanli topolojide ARTIK BASLATILMAMALIDIR (ayni GPIO
+      pinlerini/topic'leri CAKISTIRIRLAR).
 
 DUZELTME (v2 - kapsamli denetim): Asagidaki iki KRITIK hata bu surumde
 duzeltilmistir:
@@ -57,9 +83,12 @@ duzeltilmistir:
      eslestiremeyebilir (InvalidParameterTypeException riski). DUZELTME:
      ParameterValue(..., value_type=int) ile ACIKCA int'e donusturuluyor.
 
-NOT: 'pixhawk_bridge' ARTIK KULLANILMIYOR - bu donanim topolojisinde
-Pixhawk 6X sadece IMU/telemetri saglar, eyleyicileri SURMEZ (eyleyiciler
-dogrudan Jetson'dan PCA9685 uzerinden surulur, actuator_driver.py).
+NOT: 'pixhawk_bridge' ARTIK KULLANILMIYOR - Pixhawk 6X sadece IMU/
+telemetri saglar, eyleyicileri SURMEZ. Eyleyiciler artik Jetson'dan
+Arduino Uno uzerinden PCA9685'e surulur (bkz. v3 notu ve
+arduino_bridge.py) - actuator_driver.py'nin DOGRUDAN I2C yolu bu
+donanim revizyonunda KULLANILMIYOR (baska bir revizyonda gerekirse
+tekrar devreye alinabilir, dosya SILINMEDI).
 
 NOT: mock_sensors.py ve servo_controller.py BILEREK bu launch dosyasina
 DAHIL EDILMEMISTIR:
@@ -121,12 +150,22 @@ def generate_launch_description():
             "yarisma/saha kosusunda MUTLAKA varsayilan '60.0' ile birakin."
         )
     )
+    arduino_port_arg = DeclareLaunchArgument(
+        'arduino_port', default_value='/dev/ttyUSB0',
+        description="Arduino Uno'nun USB seri portu (sadece mode:=hardware icin)"
+    )
+    arduino_baud_arg = DeclareLaunchArgument(
+        'arduino_baud', default_value='115200',
+        description='Arduino seri haberlesme hizi (sadece mode:=hardware icin)'
+    )
 
     mission_id = LaunchConfiguration('mission_id')
     mode = LaunchConfiguration('mode')
     enable_telemetry = LaunchConfiguration('enable_telemetry')
     log_directory = LaunchConfiguration('log_directory')
     motor_inhibit_duration_s = LaunchConfiguration('motor_inhibit_duration_s')
+    arduino_port = LaunchConfiguration('arduino_port')
+    arduino_baud = LaunchConfiguration('arduino_baud')
 
     is_test_mode = PythonExpression(["'", mode, "' == 'test'"])
     is_hardware_mode = PythonExpression(["'", mode, "' == 'hardware'"])
@@ -142,36 +181,49 @@ def generate_launch_description():
     )
 
     # ================= GERCEK DONANIM MODU =================
-    # DUZELTME: pixhawk_bridge yerine gercek kablolamaya uygun eyleyici
-    # suruculeri, VE (kritik duzeltme) su/basinc/IMU icin TEK, eksiksiz
-    # bir sensor katmani (sensor_get_data.py) - bkz. modul dokstringi
-    # madde (1). water_sensor_driver_node / pressure_sensor_driver_node
-    # ARTIK BASLATILMIYOR (IMU koprusu icermedikleri icin hardware modunu
-    # hareketsiz birakiyorlardi, ayrica sensor_get_data.py ile ayni
-    # GPIO/I2C kaynaklarini actiklari icin CAKISIRLARDI).
-    actuator_driver_node = Node(
+    # DUZELTME (v3): actuator_driver_node ve sensor_get_data_node ARTIK
+    # BASLATILMIYOR - gercek donanim Jetson<->Arduino Uno<->PCA9685 seri
+    # koprusu (arduino_bridge.py) uzerinden calisiyor. Bu TEK node hem
+    # eyleyici ciktisini (thrust/fin/nose_cap, safety.py'den) hem su/
+    # basinc sensor girdisini kapsiyor - bkz. modul dokstringi (v3) ve
+    # arduino_bridge.py'nin kendi dokstringi.
+    arduino_bridge_node = Node(
         package='sara_control',
-        executable='actuator_driver',
-        name='actuator_driver',
+        executable='arduino_bridge',
+        name='arduino_bridge_node',
         output='screen',
-        condition=IfCondition(is_hardware_mode),
-    )
-    sensor_get_data_node = Node(
-        package='sara_control',
-        executable='sensor_get_data',
-        name='sensor_data_node',
-        output='screen',
+        # DUZELTME: bu node ROS parametreleri (declare_parameter) DEGIL,
+        # argparse (--port/--baud) kullaniyor - bu yuzden 'parameters='
+        # DEGIL 'arguments=' ile gecilmesi gerekiyor.
+        arguments=['--port', arduino_port, '--baud', arduino_baud],
         condition=IfCondition(is_hardware_mode),
     )
 
     # ================= HER IKI MODDA DA CALISAN CEKIRDEK NODE'LAR =================
     # Her node: once kendi yaml'ini okur, SONRA (varsa) launch argumani UZERINE yazar.
+    # DUZELTME (kritik - v3'te tekrar ortaya cikan bosluk): arduino_bridge.py
+    # IMU koprusu YAPMAZ (sadece thrust/fin/nose_cap iletir + su/basinc
+    # okur). sensor_get_data_node artik baslatilmadigi icin, hardware
+    # modunda /sara/imu/data'yi HICBIR SEY doldurmuyordu - bu, navigation_node
+    # icin "pixhawk_connected" hicbir zaman True olmaz, dolayisiyla TUM
+    # zincir (guidance/safety) hareketsiz kalir anlamina gelirdi (v2'de
+    # cozulen aynı hatanin farkli sebeple GERI GELMESI). EN BASIT COZUM:
+    # yeni bir koprü node'u YAZMADAN, navigation_node'un imu_topic
+    # parametresini hardware modunda DOGRUDAN mavros'un kendi topic'ine
+    # yonlendiriyoruz - ara katman gerekmiyor.
+    imu_topic_value = PythonExpression([
+        "'/mavros/imu/data' if '", mode, "' == 'hardware' else '/sara/imu/data'"
+    ])
+
     navigation_node = Node(
         package='sara_control',
         executable='navigation',
         name='navigation_node',
         output='screen',
-        parameters=[os.path.join(config_dir, 'navigation_params.yaml')],
+        parameters=[
+            os.path.join(config_dir, 'navigation_params.yaml'),
+            {'imu_topic': imu_topic_value},
+        ],
     )
 
     mission_start_node = Node(
@@ -234,10 +286,11 @@ def generate_launch_description():
         enable_telemetry_arg,
         log_directory_arg,
         motor_inhibit_arg,
+        arduino_port_arg,
+        arduino_baud_arg,
 
         vehicle_sim_node,
-        actuator_driver_node,
-        sensor_get_data_node,
+        arduino_bridge_node,
 
         navigation_node,
         mission_start_node,

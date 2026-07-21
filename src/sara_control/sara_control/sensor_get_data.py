@@ -2,6 +2,12 @@
 """
 sensor_data.py
 ==============
+*** BU DONANIM TOPOLOJISINDE (Arduino Uno seri koprusu) KULLANILMIYOR ***
+Su/basinc sensor okumasi artik arduino_bridge.py uzerinden yapiliyor
+(basinc Arduino'nun A0/SEN0257'sinden, su sensorleri Jetson GPIO
+15/16'dan - AYNI pinler). Bu dosya SILINMEDI ama sara_system.launch.py
+ARTIK BASLATMIYOR. arduino_bridge_node ile AYNI ANDA calistirmayin -
+GPIO/I2C ve /sara/pressure, /sara/water_detect_* topic'lerinde CAKISIR.
 SARA platformu - Sensör Veri Alma Katmanı
 
 Bu düğüm gerçek donanım verilerini ROS2 ortamına aktarır:

@@ -2,6 +2,11 @@
 """
 water_sensor_driver.py
 ========================
+*** BU DONANIM TOPOLOJISINDE (Arduino Uno seri koprusu) KULLANILMIYOR ***
+Su sensoru okuma mantigi artik arduino_bridge.py'nin ICINDE (ayni GPIO
+pin 15/16, ayni debounce yaklasimi) yer aliyor. Bu dosya SILINMEDI ama
+sara_system.launch.py ARTIK BASLATMIYOR. arduino_bridge_node ile AYNI
+ANDA calistirmayin - ikisi de ayni GPIO pinlerini acmaya calisir, CAKISIR.
 *** DIKKAT - OLASI CAKISMA ***
 sensor_get_data.py, bu node'un islevini (SEN0368 x2 okuma) ARTIK KENDI
 ICINDE yapiyor ve AYNI topic'lere (/sara/water_detect_1, _2) yayin

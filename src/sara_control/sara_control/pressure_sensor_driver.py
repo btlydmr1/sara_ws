@@ -2,6 +2,14 @@
 """
 pressure_sensor_driver.py
 ===========================
+*** BU DONANIM TOPOLOJISINDE KULLANILMIYOR ***
+Basinc sensoru (SEN0257) artik Jetson'un I2C/ADS1115 hattina degil,
+DOGRUDAN Arduino Uno'nun A0 pinine bagli - arduino_bridge.py, Arduino'nun
+telemetri satirindan pressure_kpa degerini okuyup /sara/pressure'i
+yayinliyor. Bu dosya SILINMEDI (farkli bir donanim revizyonunda tekrar
+kullanilabilir) ama sara_system.launch.py ARTIK BASLATMIYOR.
+arduino_bridge_node ile AYNI ANDA calistirmayin - ikisi de /sara/pressure
+topic'ine yazmaya calisir, CAKISIR.
 *** DIKKAT - OLASI CAKISMA ***
 sensor_get_data.py, bu node'un islevini (SEN0257+ADS1115 okuma) ARTIK
 KENDI ICINDE yapiyor ve AYNI topic'e (/sara/pressure) yayin yapiyor. Bu

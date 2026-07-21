@@ -2,6 +2,14 @@
 """
 actuator_driver.py
 ====================
+*** BU DONANIM TOPOLOJISINDE (Arduino Uno seri koprusu) KULLANILMIYOR ***
+Gercek donanim artik arduino_bridge.py uzerinden calisiyor (Jetson ->
+Arduino Uno -> PCA9685). Bu dosya, farkli bir donanim revizyonunda
+(Jetson'dan DOGRUDAN I2C ile PCA9685'e baglanti) tekrar kullanilabilir
+diye SILINMEDI, ama sara_system.launch.py ARTIK BU DOSYAYI BASLATMIYOR.
+Yanlislikla arduino_bridge_node ile AYNI ANDA calistirmayin - ikisi de
+ayni /sara/control/* topic'lerini dinleyip fiziksel ciktiya yazmaya
+calisir, CAKISIR.
 SARA platformu - PCA9685 Eyleyici Surucusu (GERCEK DONANIM)
 
 Bagli donanim (kullanicidan alinan gercek kablolama):
