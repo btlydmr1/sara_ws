@@ -15,8 +15,9 @@ Iki AYRI gorev profili destekler (parametre ile secilir: mission_id):
     REFERANSLAMA
       -> AKUSTIK_UYARI_GOREV_BASLATMA   (mission_start_node: 60 sn motor inhibit)
       -> DALIS                           (2 m derinlige in, sabit yerde)
-      -> G1_0_10M_KALIBRASYON            (0.895 m/s, ilk 10 m - yarisma suresi
-                                           bu fazin sonunda baslar, sartname 6.1.1)
+      -> G1_0_10M_KALIBRASYON            (0.895 m/s, ilk 10 m - yarisma suresi bu
+                                           fazin SONUNDA baslar, sartname 6.1.1,
+                                           bu fazin kendi suresi DAHIL DEGILDIR)
       -> G1_10_40M_ANA_SEYIR             (1.076 m/s, 10-40 m)
       -> G1_40_50M_YAVASLAMA             (0.895 m/s, 40-50 m - madde4: kiyidan
                                            en az 50 m uzaklasma)
@@ -31,7 +32,7 @@ Iki AYRI gorev profili destekler (parametre ile secilir: mission_id):
   GOREV 2 - Atis Gorevi (mission_id=2), KTR Tablo 2 ile birebir + sartname
   duzeltmesi (asagida aciklanmistir):
     REFERANSLAMA
-      -> AKUSTIK_UYARI_GOREV_BASLATMA
+      -> AKUSTIK_UYARI_GOREV_BASLATMA    (yarisma suresi bu fazin SONUNDA baslar)
       -> G2_ACILI_DALIS                  (0.400 m/s, KTR'deki "acili kontrollu
                                            dalis" degeri - ileri hareketle
                                            BIRLIKTE 2 m derinlige inilir, DALIS
@@ -106,7 +107,7 @@ Cikti:
     /sara/guidance/target_speed           (std_msgs/Float64, m/s)
     /sara/guidance/nose_cap_open_request  (std_msgs/Bool)
     /sara/guidance/launch_request         (std_msgs/Bool)  -- SADECE ISTEK, OTOMATIK
-    /sara/guidance/task_complete          (std_msgs/Bool)  -- YENI: terminal faz gostergesi
+    /sara/guidance/task_complete          (std_msgs/Bool)  -- terminal faz gostergesi
                                             (sartname 6.2.1 "enerjiyi keserek" gereksinimi icin)
     /sara/guidance/status                 (diagnostic_msgs/DiagnosticStatus)
 
@@ -237,6 +238,12 @@ class GuidanceNode(Node):
                                                                             # yayina baslamadan "nav gecersiz"
                                                                             # fail-safe'i yanlislikla tetiklenmesin
         self.declare_parameter('control_rate_hz', 10.0)
+        # YENI: uzun suren fazlarda (orn. 10-40m ana seyir, ~28sn)
+        # terminalde uzun sessizlik olmasin diye eklendi. DUZELTME: 7
+        # node'un ciktisi ayni terminalde ic ice gectiginde bu periyodik
+        # satirlar takibi zorlastirabiliyor - <=0 verilirse (orn. 0.0)
+        # TAMAMEN KAPANIR, sadece faz GECISLERI (cok daha seyrek) yazdirilir.
+        self.declare_parameter('periodic_log_interval_s', 5.0)
 
         # --- Faz hizlari (KTR Tablo 1 / Tablo 2 ile dogrulanan gercek degerler) ---
         self.declare_parameter('max_calibrated_speed_ms', 1.076)   # tam itkide (thrust=1.0) ulasilan hiz
@@ -253,8 +260,7 @@ class GuidanceNode(Node):
 
         # --- Gorev 1 (Seyir) mesafe esikleri - KTR Tablo 1 ile birebir ---
         self.declare_parameter('g1_kalibrasyon_distance_m', 10.0)       # 0-10m kalibrasyon sonu /
-                                                                              # sartname 6.1.1: yarisma suresi
-                                                                              # burada baslar / bitis cizgisi konumu
+                                                                              # sartname 6.1.1: bitis cizgisi konumu
         self.declare_parameter('g1_ana_seyir_distance_m', 40.0)          # 10-40m ana seyir sonu
         self.declare_parameter('g1_uzaklasma_min_distance_m', 50.0)       # 40-50m yavaslama sonu /
                                                                               # madde4: kiyidan en az 50m
@@ -296,6 +302,7 @@ class GuidanceNode(Node):
         self.g2_ates_sinyali_timeout = self.get_parameter('g2_ates_sinyali_timeout_s').value
         self.nav_status_timeout = self.get_parameter('nav_status_timeout_s').value
         self.startup_grace_period = self.get_parameter('startup_grace_period_s').value
+        self.periodic_log_interval = self.get_parameter('periodic_log_interval_s').value
 
         self.max_calibrated_speed = self.get_parameter('max_calibrated_speed_ms').value
         self.g1_calib_speed = self.get_parameter('g1_calib_speed_ms').value
@@ -329,7 +336,13 @@ class GuidanceNode(Node):
         self._mission_start_time = self.get_clock().now()
         self._phase_start_time = self.get_clock().now()
         self._condition_hold_start = None
-        self._race_timer_start = None   # Gorev1 madde3/6.1.1: "yarisma suresi baslasin" - ic telemetri isaretcisi
+        # YARISMA suresi isaretcisi (sartname 6.1.1'in birebir okumasiyla,
+        # ilk hareket bacagi/kalibrasyon fazi HARIC tutulur):
+        #   Gorev 1: ilk 10m TAMAMLANDIKTAN SONRA (G1_0_10M_KALIBRASYON'un
+        #            SONUNDA) baslar - bu fazin kendi suresi DAHIL DEGILDIR
+        #   Gorev 2: 60 sn motor inhibit tamamlanip G2_ACILI_DALIS basladiginda
+        self._race_timer_start = None
+        self._race_elapsed_frozen = None   # YENI: terminal faza girince donan yarisma suresi
 
         self._reference_heading = 0.0
         self._reference_depth = 0.0
@@ -392,7 +405,7 @@ class GuidanceNode(Node):
         self._speed_pub = self.create_publisher(Float64, '/sara/guidance/target_speed', 10)
         self._nose_cap_pub = self.create_publisher(Bool, '/sara/guidance/nose_cap_open_request', 10)
         self._launch_pub = self.create_publisher(Bool, '/sara/guidance/launch_request', 10)
-        # YENI (sartname 6.2.1 uyumu): SARA, bitis cizgisinde/gorev sonunda
+        # Sartname 6.2.1 uyumu: SARA, bitis cizgisinde/gorev sonunda
         # "enerjiyi keserek guvenli bir sekilde... yuzer bir durumda"
         # olmalidir (90 puan). Bu sinyal, terminal bir faza (G1/G2
         # TAMAMLANDI veya GUVENLI_SONLANDIRMA) ulasildiginda True olur;
@@ -491,22 +504,77 @@ class GuidanceNode(Node):
         return (self.get_clock().now() - self._phase_start_time).nanoseconds * 1e-9
 
     def _race_elapsed(self):
+        # DUZELTME: terminal faza girildikten sonra DONDURULMUS degeri
+        # dondurur (bkz. _goto_phase) - boylece bu fonksiyonu kullanan
+        # HER YER (log, /sara/guidance/status DiagnosticStatus,
+        # _log_periodic_status) otomatik olarak dondurulmus degeri gorur,
+        # sonsuza kadar buyumez.
+        if self._race_elapsed_frozen is not None:
+            return self._race_elapsed_frozen
         if self._race_timer_start is None:
             return None
         return (self.get_clock().now() - self._race_timer_start).nanoseconds * 1e-9
 
+    def _log_periodic_status(self):
+        """Uzun suren fazlarda (orn. G1_10_40M_ANA_SEYIR ~28 sn) terminalde
+        uzun sessizlik olmasin diye, faz GECISLERI disinda da her
+        periodic_log_interval_s saniyede bir yarisma suresi/mesafe/derinlik
+        bilgisi yazdirir. throttle_duration_sec, rclpy'nin dahili
+        log-hiz-sinirlama mekanizmasidir - ayri bir timer gerektirmez."""
+        race_elapsed = self._race_elapsed()
+        race_str = f'{race_elapsed:.2f} sn' if race_elapsed is not None else '- (yarisma henuz baslamadi)'
+        self.get_logger().info(
+            f'[{PHASE_NAMES[self._phase]}] yarisma suresi: {race_str} '
+            f'| mesafe: {self._approx_distance():.1f} m '
+            f'| derinlik: {self._depth:.2f} m '
+            f'| pitch: {math.degrees(self._pitch):.1f} deg',
+            throttle_duration_sec=self.periodic_log_interval,
+        )
+
     def _goto_phase(self, phase: int):
         if phase != self._phase:
             phase_duration = self._phase_elapsed()      # bu fazda ne kadar kaldi
-            mission_elapsed = self._mission_elapsed()     # gorev basindan itibaren toplam sure
+            # "yarisma suresi" alani, node baslangicindan itibaren gecen
+            # HAM sureyi (start_command'i elle gonderene kadar bekleme +
+            # 60 sn motor inhibit dahil, yaniltici) DEGIL, GERCEK YARISMA
+            # SURESINI yansitir. Sartname 6.1.1'in birebir okumasiyla:
+            #   Gorev 1: ilk 10m TAMAMLANDIKTAN SONRA baslar (bu ilk
+            #            kalibrasyon bacaginin suresi yarisma suresine
+            #            DAHIL DEGILDIR)
+            #   Gorev 2: 60sn motor inhibit tamamlanip G2_ACILI_DALIS
+            #            basladiginda baslar
+            # Yarisma henuz baslamamissa (race_timer_start=None) acikca
+            # "henuz baslamadi" yazilir. mission_elapsed_s, fail-safe
+            # (600 sn azami gorev suresi) icin hala ayrica hesaplanmaya
+            # devam eder (bkz. _mission_elapsed, _on_timer) - burada
+            # SADECE log ciktisinin gorunumu degisti, guvenlik mantigina
+            # DOKUNULMADI.
+            race_elapsed = self._race_elapsed()
+            race_str = f'{race_elapsed:.2f} sn' if race_elapsed is not None else '- (yarisma henuz baslamadi)'
             self.get_logger().info(
                 f'Gorev fazi gecisi: {PHASE_NAMES[self._phase]} -> {PHASE_NAMES[phase]} '
                 f'| bu fazda gecen sure: {phase_duration:.2f} sn '
-                f'| toplam gorev suresi: {mission_elapsed:.2f} sn'
+                f'| yarisma suresi: {race_str}'
             )
             self._phase = phase
             self._phase_start_time = self.get_clock().now()
             self._condition_hold_start = None
+
+            # DUZELTME (saha testinde bulundu): terminal bir faza
+            # (G1/G2_TAMAMLANDI veya GUVENLI_SONLANDIRMA) girildiginde
+            # yarisma suresi DONDURULUR - gercek yarismada hakem gorev
+            # bitince kronometreyi durdurur, sonsuza kadar saymaz. Bu
+            # olmadan _race_elapsed() sonsuza kadar buyumeye devam eder
+            # (bkz. _race_elapsed) ve hem log'da hem /sara/guidance/status
+            # topic'inde yaniltici, surekli artan degerler gorunurdu.
+            if phase in TERMINAL_PHASES and self._race_elapsed_frozen is None and self._race_timer_start is not None:
+                self._race_elapsed_frozen = (
+                    self.get_clock().now() - self._race_timer_start
+                ).nanoseconds * 1e-9
+                self.get_logger().info(
+                    f'*** GOREV TAMAMLANDI - toplam yarisma suresi: {self._race_elapsed_frozen:.2f} sn '
+                    f'(bu andan itibaren donduruldu) ***'
+                )
 
     def _conditions_held(self, ok: bool) -> bool:
         now = self.get_clock().now()
@@ -591,6 +659,20 @@ class GuidanceNode(Node):
         else:
             self._run_guvenli_sonlandirma()
 
+        # DUZELTME (saha testinde bulundu - yarisma suresi gorev
+        # bittikten SONRA da sonsuza kadar artmaya devam ediyordu, orn.
+        # G1_TAMAMLANDI'ya ulasildiktan 5 dakika sonra bile "yarisma
+        # suresi: 350.50 sn" gibi yaniltici degerler basiliyordu - gercek
+        # yarismada hakem gorev bitince kronometreyi durdurur, sonsuza
+        # kadar saymaz). Terminal fazlarda (G1/G2_TAMAMLANDI veya
+        # GUVENLI_SONLANDIRMA) periyodik log ARTIK BASILMIYOR - bunun
+        # yerine _goto_phase, terminal faza girildigi anda TEK SEFERLIK,
+        # DONDURULMUS bir "GOREV TAMAMLANDI" ozet satiri basar.
+        # YENI: periodic_log_interval_s<=0 verilirse periyodik log TAMAMEN
+        # KAPANIR (sadece faz gecisleri yazdirilir) - 7 node'un ciktisi
+        # ayni terminalde ic ice gectiginde takibi kolaylastirmak icin.
+        if self._phase not in TERMINAL_PHASES and self.periodic_log_interval > 0.0:
+            self._log_periodic_status()
         self._publish_all()
 
     # ---------------------------------------------------------- Ortak fazlar
@@ -620,6 +702,12 @@ class GuidanceNode(Node):
           Gorev 1 -> DALIS (yerinde/sabit dalis, sonra 0-10m kalibrasyon)
           Gorev 2 -> G2_ACILI_DALIS (ilerlerken dalis - KTR'de arac
                      yuzeyden basliyor ve "acili" sekilde dalıyor)
+
+        Gorev 2 icin yarisma suresi TAM BU NOKTADA (60 sn motor inhibit
+        tamamlanip hareket izni verildigi an) baslatilir - sartname
+        Tablo 8'in "Verilecek Sure: 1 Dakika" siniri, buton basisi/bekleme
+        suresini DEGIL, aracin fiilen hareket etmeye basladigi ani
+        referans alir. (Gorev 1'in analog karsiligi _run_dalis'tedir.)
         """
         self._forward_motion = False
         self._target_speed = 0.0
@@ -631,11 +719,18 @@ class GuidanceNode(Node):
             if self.mission_id == 1:
                 self._goto_phase(PHASE_DALIS)
             else:
+                self._race_timer_start = self.get_clock().now()
+                self.get_logger().info(
+                    '60 sn motor inhibit tamamlandi - yarisma suresi (ic telemetri) baslatildi.'
+                )
                 self._goto_phase(PHASE_G2_ACILI_DALIS)
 
     def _run_dalis(self):
         """SADECE Gorev 1 icin: baslangic alanindan itibaren yerinde/sabit
-        2 m derinlige inis (sartname 6.1.1)."""
+        2 m derinlige inis (sartname 6.1.1). Yarisma suresi BU FAZDA
+        BASLATILMAZ - sartname 6.1.1'in birebir okumasiyla, yarisma
+        suresi ilk 10 m TAMAMLANDIKTAN SONRA baslar (bkz.
+        _run_g1_0_10m_kalibrasyon)."""
         self._forward_motion = False
         self._target_speed = 0.0
         self._target_depth = self.dive_target_depth
@@ -649,8 +744,10 @@ class GuidanceNode(Node):
     # ---------------------------------------------------------- GOREV 1 (KTR Tablo 1)
     def _run_g1_0_10m_kalibrasyon(self):
         """KTR: '0-10 m kalibrasyon' fazi - dusuk/kalibrasyon hizi (0.895 m/s).
-        Bu fazin sonunda sartname 6.1.1 geregi yarisma suresi (ic telemetri
-        isaretcisi) baslatilir."""
+        Sartname 6.1.1: 'SARA, ... 10 metre ilerledikten sonra süre
+        başlatılacaktır.' Bu yuzden yarisma suresi bu fazin SONUNDA
+        (ilk 10m tamamlaninca) baslatilir - bu fazin kendi suresi
+        (~11.4 sn) yarisma suresine DAHIL DEGILDIR."""
         self._target_depth = self.dive_target_depth
         self._target_heading = self._reference_heading
         self._target_pitch = 0.0
@@ -808,7 +905,7 @@ class GuidanceNode(Node):
         aracin DURMASINI komut eder (forward_motion=False, hedef hiz=0).
         Eskiden kosul icinde self._motion_consistent (navigation'un
         odom.twist.x'inden tureyen, "arac SU AN ILERI HAREKET EDIYOR mu"
-        anlamina gelen bir bayrak) de aranıyordu. Ancak itki sifirlanip
+        anlamina gelen bir bayrak) de araniyordu. Ancak itki sifirlanip
         arac gercekten durunca twist.x de sifira dustugu icin
         motion_consistent HICBIR ZAMAN True olamiyordu - kendi kendini
         engelleyen bir kosuldu (arac hem DURSUN hem de HAREKET EDIYOR

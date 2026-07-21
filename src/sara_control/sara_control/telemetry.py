@@ -79,15 +79,16 @@ CSV_COLUMNS = [
     'surface_detected', 'nav_status_level',
     'target_depth_m', 'target_heading_deg', 'target_pitch_deg',
     'forward_motion_request', 'target_speed_ms', 'nose_cap_open_request', 'launch_request',
+    'task_complete',                                                       # YENI
     'guidance_status_level',
     'motion_permission', 'acoustic_warning', 'mission_start_status_level',
     'thrust_request', 'fin_pitch_request', 'fin_yaw_request',
     'buoyancy_request', 'autopilot_status_level',
     'thrust_command', 'fin_pitch_command', 'fin_yaw_command',
     'buoyancy_command', 'nose_cap_command', 'launch_command',
-    'safety_approved', 'fail_safe_active', 'safety_status_level',
+    'safety_approved', 'fail_safe_active', 'main_power_cutoff_command',     # YENI
+    'safety_status_level',
     'emergency_stop', 'leak_detected',
-    'bridge_status_level',
 ]
 
 
@@ -156,8 +157,8 @@ class TelemetryNode(Node):
 
         self._emergency_stop = False
         self._leak_detected = False
-
-        self._bridge_status_level = DiagnosticStatus.STALE
+        self._task_complete = False              # YENI
+        self._main_power_cutoff_command = False  # YENI
 
         # ================= Abonelikler =================
         self.create_subscription(Odometry, '/sara/navigation/odom', self._on_odom, 10)
@@ -176,6 +177,8 @@ class TelemetryNode(Node):
                                   lambda m: self._set('_nose_cap_open_request', m.data), 10)
         self.create_subscription(Bool, '/sara/guidance/launch_request',
                                   lambda m: self._set('_launch_request', m.data), 10)
+        self.create_subscription(Bool, '/sara/guidance/task_complete',
+                                  lambda m: self._set('_task_complete', m.data), 10)  # YENI
         self.create_subscription(DiagnosticStatus, '/sara/guidance/status',
                                   lambda m: self._set('_guidance_status_level', m.level), 10)
 
@@ -207,6 +210,8 @@ class TelemetryNode(Node):
                                   lambda m: self._set('_safety_approved', m.data), 10)
         self.create_subscription(Bool, '/sara/safety/fail_safe_active',
                                   lambda m: self._set('_fail_safe_active', m.data), 10)
+        self.create_subscription(Bool, '/sara/safety/main_power_cutoff_command',
+                                  lambda m: self._set('_main_power_cutoff_command', m.data), 10)  # YENI
         self.create_subscription(DiagnosticStatus, '/sara/safety/status',
                                   lambda m: self._set('_safety_status_level', m.level), 10)
 
@@ -215,8 +220,12 @@ class TelemetryNode(Node):
         self.create_subscription(Bool, '/sara/safety/leak_detected',
                                   lambda m: self._set('_leak_detected', m.data), 10)
 
-        self.create_subscription(DiagnosticStatus, '/sara/bridge/status',
-                                  lambda m: self._set('_bridge_status_level', m.level), 10)
+        # DUZELTME (denetimde bulundu): /sara/bridge/status aboneligi
+        # KALDIRILDI - bu topic'i publish eden hicbir node YOK (eski,
+        # artik kullanilmayan pixhawk_bridge.py'den kalma bir yetim
+        # abonelikti, bkz. sara_system.launch.py'nin kendi notu: "DUZELTME:
+        # 'pixhawk_bridge' ARTIK KULLANILMIYOR"). CSV'de surekli STALE
+        # gorunmesi disinda zararsizdi ama artik gereksiz kod/sutun.
 
         self.create_timer(1.0 / rate, self._on_timer)
 
@@ -275,6 +284,7 @@ class TelemetryNode(Node):
             'target_speed_ms': f'{self._target_speed:.3f}',
             'nose_cap_open_request': self._nose_cap_open_request,
             'launch_request': self._launch_request,
+            'task_complete': self._task_complete,  # YENI
             'guidance_status_level': level_to_str(self._guidance_status_level),
             'motion_permission': self._motion_permission,
             'acoustic_warning': self._acoustic_warning,
@@ -292,10 +302,10 @@ class TelemetryNode(Node):
             'launch_command': self._launch_command,
             'safety_approved': self._safety_approved,
             'fail_safe_active': self._fail_safe_active,
+            'main_power_cutoff_command': self._main_power_cutoff_command,  # YENI
             'safety_status_level': level_to_str(self._safety_status_level),
             'emergency_stop': self._emergency_stop,
             'leak_detected': self._leak_detected,
-            'bridge_status_level': level_to_str(self._bridge_status_level),
         }
         self._csv_writer.writerow(row)
         self._row_count += 1
