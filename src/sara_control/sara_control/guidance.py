@@ -1,56 +1,113 @@
 #!/usr/bin/env python3
 """
-guidance.py (v2)
-==================
+guidance.py (v3 - GRANÜLER FAZ MİMARİSİ)
+==========================================
 SARA platformu - Gudum Katmani
+
+DUZELTME (v3): Fazlar, KTR Tablo 1/Tablo 2 ve sartnameyle BIREBIR
+eslesecek sekilde, her biri kendi hizi/gecis kosuluyla AYRI birer faz
+olacak sekilde parcalanmistir (v2'de bircogu "dahili hiz gecisi" ile tek
+fazda birlestirilmisti - telemetri/log okumasini zorlastiriyordu).
 
 Iki AYRI gorev profili destekler (parametre ile secilir: mission_id):
 
-  GOREV 1 - Seyir Gorevi (mission_id=1):
-    1. Baslangictan itibaren 2 m derinlige in.
-    2. Ilk 10 m duz ilerle.
-    3. (10 m tamamlaninca) yarisma suresi baslar - ic telemetri isaretcisi.
-    4. Kiyidan en az 50 m uzaklas.
-    5. Baslangic/bitis cizgisine geri don.
-    6. Enerjiyi kesip su ustunde bekle.
+  GOREV 1 - Seyir Gorevi (mission_id=1), KTR Tablo 1 ile birebir:
+    REFERANSLAMA
+      -> AKUSTIK_UYARI_GOREV_BASLATMA   (mission_start_node: 60 sn motor inhibit)
+      -> DALIS                           (2 m derinlige in, sabit yerde)
+      -> G1_0_10M_KALIBRASYON            (0.895 m/s, ilk 10 m - yarisma suresi
+                                           bu fazin sonunda baslar, sartname 6.1.1)
+      -> G1_10_40M_ANA_SEYIR             (1.076 m/s, 10-40 m)
+      -> G1_40_50M_YAVASLAMA             (0.895 m/s, 40-50 m - madde4: kiyidan
+                                           en az 50 m uzaklasma)
+      -> G1_U_DONUS                      (0.895 m/s, heading 180 derece donene kadar)
+      -> G1_GERI_DONUS_HIZLI             (1.076 m/s, bitis cizgisine ~15 m kalana kadar)
+      -> G1_KIYIYA_YAKLASMA              (0.895 m/s, bitis cizgisi toleransina girene kadar)
+      -> G1_BITIS_CIZGISI                (madde5: baslangic/bitis cizgisinde konum
+                                           dogrulama - kararlilik suresi kadar bekle)
+      -> G1_YUZEYE_CIKIS                 (sartname 6.2.1: pozitif sephiyeyle yuzeye cik)
+      -> G1_TAMAMLANDI                   (terminal - guvenli, sabit, yuzeyde)
 
-  GOREV 2 - Atis Gorevi (mission_id=2):
-    1. 30 m duz git.
-    2. Guvenli atis bolgesine ulas.
-    3. +30 derece yunuslama aciSiyla yuzeye cik.
-    4. Dogru aciyi algila/onayla.
-    5. Burun kapagini ac.
-    6. Roket atesleme sinyalini gonder (TAMAMEN OTOMATIK, manuel degil).
+  GOREV 2 - Atis Gorevi (mission_id=2), KTR Tablo 2 ile birebir + sartname
+  duzeltmesi (asagida aciklanmistir):
+    REFERANSLAMA
+      -> AKUSTIK_UYARI_GOREV_BASLATMA
+      -> G2_ACILI_DALIS                  (0.400 m/s, KTR'deki "acili kontrollu
+                                           dalis" degeri - ileri hareketle
+                                           BIRLIKTE 2 m derinlige inilir, DALIS
+                                           fazinin aksine yerinde degil ILERLERKEN
+                                           dalar - KTR'de arac yuzeyden basliyor)
+      -> G2_30M_TAMAMLAMA_SEYIR          (1.076 m/s - DUZELTME asagida)
+      -> G2_GUVENLI_ATIS_BOLGESI         (hiz 0, stabil bekleme)
+      -> G2_TIRMANIS_35_DERECE           (0.340 m/s, +35 derece hedef pitch ile
+                                           yuzeye tirmanis)
+      -> G2_ACI_VE_YUZEY_DOGRULAMA       (pitch>=30 derece VE burun disarida/
+                                           kuyruk icerde kosulu birlikte dogrulanir)
+      -> G2_BURUN_KAPAGI_AC              (3 sn sabit sure)
+      -> G2_ATES_SINYALI_GONDER          (TAMAMEN OTOMATIK, manuel tetikleme YOK)
+      -> G2_TAMAMLANDI                   (terminal)
+
+  *** KTR TABLO 1 (GOREV 2) HATA DUZELTMESI ***
+  KTR raporunda "Acili kontrollu dalis" fazina 10.00 sn / 0.400 m/s
+  verilmisti (~4 m). Ancak sartname Madde 1 acikca "kiyiya dik ve duz
+  istikamette 30 metre ilerledikten sonra..." diyor - KTR bu 30 m'lik
+  YATAY ilerlemeyi hesaba katmamis. Eger tum 30 m 0.400 m/s ile
+  alinsaydi tek basina 75 sn surer, bu da Asama-2'nin sartnamedeki
+  1 dakikalik (60 sn) sinirini asardi.
+  DUZELTME: KTR'nin 0.400 m/s degeri ATILMADI - "G2_ACILI_DALIS" fazi
+  olarak GERCEK anlamiyla (yuzeyden 2 m'ye inis manevrasi) korundu.
+  Bunun UZERINE, 30 m'nin geri kalanini tamamlayan YENI bir faz
+  (G2_30M_TAMAMLAMA_SEYIR) eklendi ve bu faz Gorev 1'deki cruise hizini
+  (1.076 m/s) kullanir. Toplam mesafe muhasebesi (approx_distance,
+  navigation_node'da surekli birikir) her iki fazda da ayni sayaci
+  kullandigi icin, dalis fazinda kac metre alindigi ONEMLI DEGILDIR -
+  G2_30M_TAMAMLAMA_SEYIR fazi otomatik olarak "30 m'ye ulasana kadar"
+  devam eder. Tipik sure butcesi: dalis ~10 sn (~4 m) + tamamlama
+  (30-4)/1.076 ~= 24.2 sn = toplam ~34 sn seyir + guvenli bolge
+  bekleme + tirmanis + dogrulama + burun kapagi (3 sn sabit) + ates
+  sinyali bekleme - KTR'nin diger fazlariyla toplandiginda 60 sn
+  sinirinin GUVENLE ALTINDA kalir.
 
 GUVENLIK KURALLARI (rapor + kullanicidan gelen sartlar):
   - Acil durdurma butonuna basilirsa motorlar HEMEN durur (ayni kontrol
     dongusunde, forward_motion_request=False).
   - Acma butonundan (gorev baslangicindan) sonra 60 sn gecmeden motorlar
-    CALISMAZ (AKUSTIK_UYARI_GOREV_BASLATMA fazi).
+    CALISMAZ (AKUSTIK_UYARI_GOREV_BASLATMA fazi - mission_start_node
+    tarafindan yonetilir, Tablo 11).
   - Atesleme MANUEL DEGIL: launch_request sadece otomatik kosul
     degerlendirmesiyle uretilir; hicbir "manuel tetikle" girdisi YOKTUR.
   - Birden fazla bagimsiz fail-safe kontrolu: acil durdurma, navigasyon
-    veri gecerliligi/zaman asimi, azami gorev suresi, su kacagi (leak).
+    veri gecerliligi/zaman asimi, azami gorev suresi, su kacagi (leak),
+    atesleme-fazina-ozel bagimsiz zaman asimi.
 
 Gudum katmani DOGRUDAN motor/servo sinyali URETMEZ; sadece hedef
-derinlik/heading/pitch ve gorev fazi kararlarini uretir (Otopilot/PID
+derinlik/heading/pitch/hiz ve gorev fazi kararlarini uretir (Otopilot/PID
 katmani bunlari tuketir). Burun kapagi acma ve ates sinyali de birer
 "ISTEK/komut talebidir" - launch_request ozelinde nihai firlatma
-onayi ayri bir Guvenlik Katmani dugumunde dogrulanmalidir.
+onayi ayri bir Guvenlik Katmani dugumunde (safety.py) BAGIMSIZ olarak
+dogrulanir (orn. launch_min_pitch_deg=25, gudumun 30 derece esiginden
+KASITLI olarak dusuk tutulur - iki bagimsiz kontrol ayni anda AYNI
+noktada basarisiz olmasin diye).
 
 Girdi:
     /sara/navigation/odom               (nav_msgs/Odometry)
     /sara/navigation/surface_detected   (std_msgs/Bool)
     /sara/navigation/status             (diagnostic_msgs/DiagnosticStatus)
+    /sara/water_detect_1                (std_msgs/Bool)  -- burun
+    /sara/water_detect_2                (std_msgs/Bool)  -- kuyruk
     /sara/safety/emergency_stop         (std_msgs/Bool, yoksa False varsayilir)
     /sara/safety/leak_detected          (std_msgs/Bool, yoksa False varsayilir)
+    /sara/mission_start/motion_permission (std_msgs/Bool)
 
 Cikti:
     /sara/guidance/target_pose            (geometry_msgs/PoseStamped)
     /sara/guidance/mission_phase          (std_msgs/String)
     /sara/guidance/forward_motion_request (std_msgs/Bool)
+    /sara/guidance/target_speed           (std_msgs/Float64, m/s)
     /sara/guidance/nose_cap_open_request  (std_msgs/Bool)
     /sara/guidance/launch_request         (std_msgs/Bool)  -- SADECE ISTEK, OTOMATIK
+    /sara/guidance/task_complete          (std_msgs/Bool)  -- YENI: terminal faz gostergesi
+                                            (sartname 6.2.1 "enerjiyi keserek" gereksinimi icin)
     /sara/guidance/status                 (diagnostic_msgs/DiagnosticStatus)
 
 NOT: Akustik uyari/buzzer sinyali BU node'da degil, ayri mission_start.py
@@ -74,46 +131,58 @@ from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
 # Gorev fazlari
 # ---------------------------------------------------------------------------
 PHASE_REFERANSLAMA = 0
-PHASE_AKUSTIK_UYARI = 1
+PHASE_AKUSTIK_UYARI_GOREV_BASLATMA = 1
 PHASE_DALIS = 2
 
-# Gorev 1 - Seyir
-PHASE_G1_DUZ_SEYIR_10M = 10
-PHASE_G1_UZAKLASMA_50M = 11
-PHASE_G1_GERI_DONUS = 12
-PHASE_G1_TAMAMLANDI_YUZEYDE_BEKLE = 13
+# Gorev 1 - Seyir (KTR Tablo 1 ile birebir, her satir ayri bir faz)
+PHASE_G1_0_10M_KALIBRASYON = 10
+PHASE_G1_10_40M_ANA_SEYIR = 11
+PHASE_G1_40_50M_YAVASLAMA = 12
+PHASE_G1_U_DONUS = 13
+PHASE_G1_GERI_DONUS_HIZLI = 14
+PHASE_G1_KIYIYA_YAKLASMA = 15
+PHASE_G1_BITIS_CIZGISI = 16
+PHASE_G1_YUZEYE_CIKIS = 17
+PHASE_G1_TAMAMLANDI = 18
 
-# Gorev 2 - Atis
-PHASE_G2_DUZ_SEYIR_30M = 20
-PHASE_G2_GUVENLI_ATIS_BOLGESI = 21
-PHASE_G2_TIRMANIS_30_DERECE = 22
-PHASE_G2_ACI_DOGRULAMA = 23
-PHASE_G2_BURUN_KAPAGI_AC = 24
-PHASE_G2_ATES_SINYALI_GONDER = 25
-PHASE_G2_TAMAMLANDI = 26
+# Gorev 2 - Atis (KTR Tablo 2 + 30m sartname duzeltmesi, bkz. modul dokstringi)
+PHASE_G2_ACILI_DALIS = 20
+PHASE_G2_30M_TAMAMLAMA_SEYIR = 21
+PHASE_G2_GUVENLI_ATIS_BOLGESI = 22
+PHASE_G2_TIRMANIS_35_DERECE = 23
+PHASE_G2_ACI_VE_YUZEY_DOGRULAMA = 24
+PHASE_G2_BURUN_KAPAGI_AC = 25
+PHASE_G2_ATES_SINYALI_GONDER = 26
+PHASE_G2_TAMAMLANDI = 27
 
 # Ortak fail-safe / terminal
 PHASE_GUVENLI_SONLANDIRMA = 99
 
 PHASE_NAMES = {
     PHASE_REFERANSLAMA: 'REFERANSLAMA',
-    PHASE_AKUSTIK_UYARI: 'AKUSTIK_UYARI_GOREV_BASLATMA',
+    PHASE_AKUSTIK_UYARI_GOREV_BASLATMA: 'AKUSTIK_UYARI_GOREV_BASLATMA',
     PHASE_DALIS: 'DALIS',
-    PHASE_G1_DUZ_SEYIR_10M: 'G1_DUZ_SEYIR_ILK_10M',
-    PHASE_G1_UZAKLASMA_50M: 'G1_UZAKLASMA_KIYIDAN_50M',
-    PHASE_G1_GERI_DONUS: 'G1_GERI_DONUS_BASLANGIC_CIZGISI',
-    PHASE_G1_TAMAMLANDI_YUZEYDE_BEKLE: 'G1_TAMAMLANDI_ENERJI_KESIK_YUZEYDE_BEKLE',
-    PHASE_G2_DUZ_SEYIR_30M: 'G2_DUZ_SEYIR_30M',
+    PHASE_G1_0_10M_KALIBRASYON: 'G1_0_10M_KALIBRASYON',
+    PHASE_G1_10_40M_ANA_SEYIR: 'G1_10_40M_ANA_SEYIR',
+    PHASE_G1_40_50M_YAVASLAMA: 'G1_40_50M_YAVASLAMA',
+    PHASE_G1_U_DONUS: 'G1_U_DONUS',
+    PHASE_G1_GERI_DONUS_HIZLI: 'G1_GERI_DONUS_HIZLI',
+    PHASE_G1_KIYIYA_YAKLASMA: 'G1_KIYIYA_YAKLASMA',
+    PHASE_G1_BITIS_CIZGISI: 'G1_BITIS_CIZGISI',
+    PHASE_G1_YUZEYE_CIKIS: 'G1_YUZEYE_CIKIS',
+    PHASE_G1_TAMAMLANDI: 'G1_TAMAMLANDI',
+    PHASE_G2_ACILI_DALIS: 'G2_ACILI_DALIS',
+    PHASE_G2_30M_TAMAMLAMA_SEYIR: 'G2_30M_TAMAMLAMA_SEYIR',
     PHASE_G2_GUVENLI_ATIS_BOLGESI: 'G2_GUVENLI_ATIS_BOLGESI',
-    PHASE_G2_TIRMANIS_30_DERECE: 'G2_TIRMANIS_30_DERECE',
-    PHASE_G2_ACI_DOGRULAMA: 'G2_ACI_DOGRULAMA',
+    PHASE_G2_TIRMANIS_35_DERECE: 'G2_TIRMANIS_35_DERECE',
+    PHASE_G2_ACI_VE_YUZEY_DOGRULAMA: 'G2_ACI_VE_YUZEY_DOGRULAMA',
     PHASE_G2_BURUN_KAPAGI_AC: 'G2_BURUN_KAPAGI_AC',
     PHASE_G2_ATES_SINYALI_GONDER: 'G2_ATES_SINYALI_GONDER',
     PHASE_G2_TAMAMLANDI: 'G2_TAMAMLANDI',
     PHASE_GUVENLI_SONLANDIRMA: 'GUVENLI_SONLANDIRMA',
 }
 
-TERMINAL_PHASES = {PHASE_G1_TAMAMLANDI_YUZEYDE_BEKLE, PHASE_G2_TAMAMLANDI, PHASE_GUVENLI_SONLANDIRMA}
+TERMINAL_PHASES = {PHASE_G1_TAMAMLANDI, PHASE_G2_TAMAMLANDI, PHASE_GUVENLI_SONLANDIRMA}
 
 
 def wrap_pi(angle: float) -> float:
@@ -158,70 +227,62 @@ class GuidanceNode(Node):
         # --- Ortak ---
         self.declare_parameter('dive_target_depth', 2.0)          # [m] - Gorev1 madde1 (Gorev2 icin de varsayilan)
         self.declare_parameter('depth_tolerance', 0.15)             # [m]
-        self.declare_parameter('heading_tolerance', 0.10)           # [rad] (~5.7 derece)
-                                                                        # NOT: 0.07'ye sikilastirilmisti ama PID
-                                                                        # (henuz ayarlanmadi) bu hassasiyete
-                                                                        # ulasamadi - GERI ALINDI, kanitlanmis
-                                                                        # 0.10 degerine donuldu.
+        self.declare_parameter('heading_tolerance', 0.10)           # [rad] (~5.7 derece) - kanitlanmis deger
         self.declare_parameter('pitch_tolerance', 0.10)             # [rad]
-        # NOT: motor_inhibit_duration_s / acoustic_warning_lead_s artik BU node'da
-        # DEGIL - ayri "mission_start_node" (Gorev Baslatma/Akustik Uyari Katmani,
-        # Tablo 11) tarafindan yonetiliyor. Bu node onun uretttigi
-        # /sara/mission_start/motion_permission ciktisini dinler.
         self.declare_parameter('kararlilik_suresi_s', 3.0)           # kosul kesintisiz saglanma suresi
         self.declare_parameter('max_mission_duration_s', 600.0)      # fail-safe: azami gorev suresi
-        self.declare_parameter('g2_ates_sinyali_timeout_s', 30.0)     # YENI: atesleme fazina OZEL, BAGIMSIZ
-                                                                          # zaman asimi - kosullar bu sure icinde
-                                                                          # saglanamazsa (600sn genel sinira kadar
-                                                                          # beklemeden) guvenli sonlandirir. Sartname
-                                                                          # 4.2.1: "birden fazla guvenlik kontrol
-                                                                          # adimi ve fail-safe mekanizmalari" ruhuna
-                                                                          # uygun ek, bagimsiz bir katman.
+        self.declare_parameter('g2_ates_sinyali_timeout_s', 30.0)     # atesleme fazina OZEL, BAGIMSIZ zaman asimi
         self.declare_parameter('nav_status_timeout_s', 2.0)           # fail-safe: navigasyon veri zaman asimi
-        self.declare_parameter('startup_grace_period_s', 5.0)          # DUZELTME: baslangicta diger node'lar
-                                                                          # henuz yayina baslamadan "nav gecersiz"
-                                                                          # fail-safe'i yanlislikla tetiklenmesin
+        self.declare_parameter('startup_grace_period_s', 5.0)          # baslangicta diger node'lar henuz
+                                                                            # yayina baslamadan "nav gecersiz"
+                                                                            # fail-safe'i yanlislikla tetiklenmesin
         self.declare_parameter('control_rate_hz', 10.0)
 
-        # --- Gorev 1 (Seyir) parametreleri ---
-        self.declare_parameter('g1_duz_seyir_distance_m', 10.0)         # madde 2: ilk 10 m duz
-        self.declare_parameter('g1_uzaklasma_min_distance_m', 50.0)      # madde 4: kiyidan en az 50 m
-        self.declare_parameter('g1_yavaslama_baslangic_m', 40.0)          # KTR: 40m'den sonra yavasla (donus oncesi)
-        self.declare_parameter('g1_yaklasma_baslangic_m', 15.0)            # KTR: cizgiye ~15m kalinca yavasla
-        self.declare_parameter('g1_geri_donus_tolerance_m', 2.0)          # madde 5: baslangic/bitis cizgisine yakinlik
-                                                                              # NOT: 1.0'a sikilastirilmisti ama PID
-                                                                              # (henuz ayarlanmadi) bu hassasiyete
-                                                                              # ulasamadi, faz 170+ saniye takildi -
-                                                                              # GERI ALINDI, kanitlanmis 2.0 degerine
-                                                                              # donuldu. PID gercek testlerle
-                                                                              # iyilestirildiginde tekrar sikilastirilabilir.
-
-        # --- YENI: Faz-bazli hedef hizlar (KTR'den) - ARTIK TEK SABIT HIZ
-        # YOK, her faz kendi gercek hedef hizini yayinlar. Otopilot, bu
-        # hizi max_calibrated_speed'e oranlayarak itki seviyesi uretir.
+        # --- Faz hizlari (KTR Tablo 1 / Tablo 2 ile dogrulanan gercek degerler) ---
         self.declare_parameter('max_calibrated_speed_ms', 1.076)   # tam itkide (thrust=1.0) ulasilan hiz
-        self.declare_parameter('g1_calib_speed_ms', 0.895)           # KTR: 0-10m kalibrasyon hizi
-        self.declare_parameter('g1_cruise_speed_ms', 1.076)           # KTR: 10-40m ana seyir / geri donus hizi
-        self.declare_parameter('g2_dive_speed_ms', 0.400)              # KTR: acili kontrollu dalis hizi
-        self.declare_parameter('g2_ascend_speed_ms', 0.340)             # KTR: kontrollu yuzeye cikis hizi
+        self.declare_parameter('g1_calib_speed_ms', 0.895)          # G1_0_10M_KALIBRASYON, G1_40_50M_YAVASLAMA,
+                                                                          # G1_U_DONUS, G1_KIYIYA_YAKLASMA (KTR'nin
+                                                                          # ortak 0.895 m/s degeri)
+        self.declare_parameter('g1_cruise_speed_ms', 1.076)          # G1_10_40M_ANA_SEYIR, G1_GERI_DONUS_HIZLI
+        self.declare_parameter('g2_dive_speed_ms', 0.400)             # G2_ACILI_DALIS - KTR'nin ORIJINAL degeri,
+                                                                          # DEGISTIRILMEDI (bkz. modul dokstringi)
+        self.declare_parameter('g2_transit_speed_ms', 1.076)          # G2_30M_TAMAMLAMA_SEYIR - YENI faz,
+                                                                          # sartnamenin 30m sartini karsilamak
+                                                                          # icin eklendi (KTR hatasi duzeltmesi)
+        self.declare_parameter('g2_ascend_speed_ms', 0.340)            # G2_TIRMANIS_35_DERECE
 
-        # --- Gorev 2 (Atis) parametreleri ---
-        self.declare_parameter('g2_duz_seyir_distance_m', 30.0)          # madde 1: 30 m duz git
-        # Guvenli atis bolgesi: SAHA/YARISMA KURALINA GORE TANIMLANMALI (TODO - gercek
-        # deger geldiginde guncellenecek). Simdilik TEST AMACLI, 30m duz seyir
-        # mesafesiyle TUTARLI bir aralik verildi (mesafe 30m'ye ulasinca bolgeye
-        # girilebilsin diye) - onceki varsayilan (0-5m) 30m'lik seyirle CELISIYORDU.
-        self.declare_parameter('g2_safe_zone_min_m', 25.0)                 # TODO: gercek deger
-        self.declare_parameter('g2_safe_zone_max_m', 35.0)                   # TODO: gercek deger
-        self.declare_parameter('g2_tirmanis_target_pitch_deg', 35.0)         # madde 3: 30 dereceden FAZLA hedeflenmeli, pay icin 35 kullanildi
-        self.declare_parameter('g2_min_launch_pitch_deg', 30.0)               # DUZELTME: Sartname acikca ">30 derece" diyor (Madde 4.1)
-        self.declare_parameter('g2_firing_depth', 0.0)                        # DUZELTME: gorev tanimi acikca
-                                                                                  # "yuzeye cik" diyor - ara bir
-                                                                                  # derinlik DEGIL, gercek yuzey (0m).
-                                                                                  # Derinlik fiziksel olarak 0'in
-                                                                                  # ALTINA inemedigi icin eski 0.3m
-                                                                                  # hedefi ASLA yakalanamiyordu.
-        self.declare_parameter('g2_nose_cap_open_duration_s', 3.0)            # TODO: gercek servo suresi
+        # --- Gorev 1 (Seyir) mesafe esikleri - KTR Tablo 1 ile birebir ---
+        self.declare_parameter('g1_kalibrasyon_distance_m', 10.0)       # 0-10m kalibrasyon sonu /
+                                                                              # sartname 6.1.1: yarisma suresi
+                                                                              # burada baslar / bitis cizgisi konumu
+        self.declare_parameter('g1_ana_seyir_distance_m', 40.0)          # 10-40m ana seyir sonu
+        self.declare_parameter('g1_uzaklasma_min_distance_m', 50.0)       # 40-50m yavaslama sonu /
+                                                                              # madde4: kiyidan en az 50m
+        self.declare_parameter('g1_yaklasma_baslangic_m', 15.0)            # geri donus hizli seyir sonu
+                                                                              # (bitis cizgisine ~15m kala yavasla)
+        self.declare_parameter('g1_bitis_cizgisi_tolerance_m', 2.0)         # kiyiya yaklasma sonu /
+                                                                              # bitis cizgisine varis toleransi
+                                                                              # (kanitlanmis deger, PID henuz
+                                                                              # ayarlanmadan sikilastirilmadi)
+
+        # --- Gorev 2 (Atis) mesafe/aci esikleri ---
+        self.declare_parameter('g2_duz_seyir_distance_m', 30.0)          # madde 1: 30 m duz git (ACILI_DALIS +
+                                                                              # 30M_TAMAMLAMA_SEYIR TOPLAMDA bu
+                                                                              # mesafeyi kat eder)
+        # Guvenli atis bolgesi: 30m'lik mesafe hedefi etrafinda tolerans bandi.
+        # Sartname bunun disinda ayrica bir saha/GPS koordinati vermiyor;
+        # arac GPS/DVL'siz oldugu icin (dead-reckoning) bu, mesafe bazli
+        # bir tolerans bandi olarak modellenmistir - saha testleriyle
+        # (dead-reckoning sapma miktarina gore) ayarlanabilir.
+        self.declare_parameter('g2_safe_zone_min_m', 25.0)
+        self.declare_parameter('g2_safe_zone_max_m', 35.0)
+        self.declare_parameter('g2_tirmanis_target_pitch_deg', 35.0)         # madde 3: 30 dereceden FAZLA
+                                                                                  # hedeflenmeli, pay icin 35 kullanildi
+        self.declare_parameter('g2_min_launch_pitch_deg', 30.0)               # sartname 4.1: ">30 derece" (Madde 4.1)
+        self.declare_parameter('g2_firing_depth', 0.0)                        # gorev tanimi acikca "yuzeye cik"
+                                                                                  # diyor - gercek yuzey (0m)
+        self.declare_parameter('g2_nose_cap_open_duration_s', 3.0)            # TODO: gercek servo suresiyle
+                                                                                  # guncellenecek
 
         # ================= Iceri aktar =================
         self.mission_id = int(self.get_parameter('mission_id').value)
@@ -236,17 +297,18 @@ class GuidanceNode(Node):
         self.nav_status_timeout = self.get_parameter('nav_status_timeout_s').value
         self.startup_grace_period = self.get_parameter('startup_grace_period_s').value
 
-        self.g1_duz_seyir_distance = self.get_parameter('g1_duz_seyir_distance_m').value
-        self.g1_uzaklasma_min_distance = self.get_parameter('g1_uzaklasma_min_distance_m').value
-        self.g1_yavaslama_baslangic_m = self.get_parameter('g1_yavaslama_baslangic_m').value
-        self.g1_yaklasma_baslangic_m = self.get_parameter('g1_yaklasma_baslangic_m').value
-        self.g1_geri_donus_tolerance = self.get_parameter('g1_geri_donus_tolerance_m').value
-
         self.max_calibrated_speed = self.get_parameter('max_calibrated_speed_ms').value
         self.g1_calib_speed = self.get_parameter('g1_calib_speed_ms').value
         self.g1_cruise_speed = self.get_parameter('g1_cruise_speed_ms').value
         self.g2_dive_speed = self.get_parameter('g2_dive_speed_ms').value
+        self.g2_transit_speed = self.get_parameter('g2_transit_speed_ms').value
         self.g2_ascend_speed = self.get_parameter('g2_ascend_speed_ms').value
+
+        self.g1_kalibrasyon_distance = self.get_parameter('g1_kalibrasyon_distance_m').value
+        self.g1_ana_seyir_distance = self.get_parameter('g1_ana_seyir_distance_m').value
+        self.g1_uzaklasma_min_distance = self.get_parameter('g1_uzaklasma_min_distance_m').value
+        self.g1_yaklasma_baslangic_m = self.get_parameter('g1_yaklasma_baslangic_m').value
+        self.g1_bitis_cizgisi_tolerance = self.get_parameter('g1_bitis_cizgisi_tolerance_m').value
 
         self.g2_duz_seyir_distance = self.get_parameter('g2_duz_seyir_distance_m').value
         self.g2_safe_zone_min = self.get_parameter('g2_safe_zone_min_m').value
@@ -267,7 +329,7 @@ class GuidanceNode(Node):
         self._mission_start_time = self.get_clock().now()
         self._phase_start_time = self.get_clock().now()
         self._condition_hold_start = None
-        self._race_timer_start = None   # Gorev1 madde3: "yarisma suresi baslasin" - ic telemetri isaretcisi
+        self._race_timer_start = None   # Gorev1 madde3/6.1.1: "yarisma suresi baslasin" - ic telemetri isaretcisi
 
         self._reference_heading = 0.0
         self._reference_depth = 0.0
@@ -294,7 +356,7 @@ class GuidanceNode(Node):
         self._target_heading = 0.0
         self._target_pitch = 0.0
         self._forward_motion = False
-        self._target_speed = 0.0  # YENI: faz-bazli hedef hiz [m/s]
+        self._target_speed = 0.0
         self._nose_cap_open_request = False
         self._launch_request = False
 
@@ -304,13 +366,10 @@ class GuidanceNode(Node):
         # DUZELTME (KTR sayfa 14/37): Atesleme izni "yuzeyde mi degil mi" gibi
         # tek bir genel bayrakla degil, TAM OLARAK "burun su DISINDA, kuyruk
         # su ICINDE" (kismi cikis acisi) kosuluyla verilmelidir. Bu yuzden
-        # ham sensorlere DOGRUDAN abone oluyoruz - navigasyonun tek bir
-        # boolean'a indirgedigi surface_detected bu ayrimi ifade edemez.
+        # ham sensorlere DOGRUDAN abone oluyoruz.
         # DUZELTME: sensor topic'leri (vehicle_sim/gercek donanim) BEST_EFFORT
         # QoS ile yayin yapar. Varsayilan (RELIABLE) abonelik bunlarla
-        # UYUMSUZDUR - hicbir mesaj alinamaz, sessizce basarisiz olur
-        # (sadece bir WARN log basar, hata firlatmaz - bu yuzden fark
-        # edilmesi kolay degildi).
+        # UYUMSUZDUR - hicbir mesaj alinamaz, sessizce basarisiz olur.
         sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
@@ -330,9 +389,17 @@ class GuidanceNode(Node):
         self._target_pub = self.create_publisher(PoseStamped, '/sara/guidance/target_pose', 10)
         self._phase_pub = self.create_publisher(String, '/sara/guidance/mission_phase', 10)
         self._forward_pub = self.create_publisher(Bool, '/sara/guidance/forward_motion_request', 10)
-        self._speed_pub = self.create_publisher(Float64, '/sara/guidance/target_speed', 10)  # YENI
+        self._speed_pub = self.create_publisher(Float64, '/sara/guidance/target_speed', 10)
         self._nose_cap_pub = self.create_publisher(Bool, '/sara/guidance/nose_cap_open_request', 10)
         self._launch_pub = self.create_publisher(Bool, '/sara/guidance/launch_request', 10)
+        # YENI (sartname 6.2.1 uyumu): SARA, bitis cizgisinde/gorev sonunda
+        # "enerjiyi keserek guvenli bir sekilde... yuzer bir durumda"
+        # olmalidir (90 puan). Bu sinyal, terminal bir faza (G1/G2
+        # TAMAMLANDI veya GUVENLI_SONLANDIRMA) ulasildiginda True olur;
+        # safety_node bunu dinleyip nihai bir "ana guc kesme" komutu
+        # uretir (fiziksel MOSFET hattina baglanmasi ayri bir donanim
+        # gorevidir, KTR'de tanimlidir).
+        self._task_complete_pub = self.create_publisher(Bool, '/sara/guidance/task_complete', 10)
         self._status_pub = self.create_publisher(DiagnosticStatus, '/sara/guidance/status', 10)
 
         self.create_timer(1.0 / rate, self._on_timer)
@@ -397,6 +464,18 @@ class GuidanceNode(Node):
     def _heading_error_to(self, target_heading: float) -> float:
         return wrap_pi(target_heading - self._heading)
 
+    @property
+    def _return_heading(self) -> float:
+        """G1'de baslangic/bitis cizgisine geri donus icin hedef heading
+        (referans heading'in tam tersi, 180 derece dondurulmus)."""
+        return wrap_pi(self._reference_heading + math.pi)
+
+    def _distance_to_finish_line(self) -> float:
+        """G1'de bitis cizgisi, kiyidan g1_kalibrasyon_distance (10m)
+        uzaklikta - sartname 6.1.1: 'kiyidan 10 metre uzaklıktaki
+        baslangic/bitis cizgisi'."""
+        return abs(self._approx_distance() - self.g1_kalibrasyon_distance)
+
     def _nav_ok(self) -> bool:
         if self._last_nav_status_time is None:
             return False
@@ -460,9 +539,9 @@ class GuidanceNode(Node):
             and self._phase_elapsed() > self.g2_ates_sinyali_timeout
             and not self._launch_request
         ):
-            # YENI - BAGIMSIZ fail-safe: atesleme kosullari bu fazda
-            # cok uzun suredir saglanamiyorsa (launch_request hic True
-            # olamadiysa), genel 600sn siniri beklemeden guvenli sonlandir.
+            # BAGIMSIZ fail-safe: atesleme kosullari bu fazda cok uzun
+            # suredir saglanamiyorsa (launch_request hic True olamadiysa),
+            # genel 600sn siniri beklemeden guvenli sonlandir.
             failsafe_reason = f'atesleme kosullari {self.g2_ates_sinyali_timeout:.0f} sn icinde saglanamadi'
 
         if failsafe_reason is not None and self._phase not in TERMINAL_PHASES:
@@ -471,26 +550,38 @@ class GuidanceNode(Node):
 
         if self._phase == PHASE_REFERANSLAMA:
             self._run_referanslama()
-        elif self._phase == PHASE_AKUSTIK_UYARI:
+        elif self._phase == PHASE_AKUSTIK_UYARI_GOREV_BASLATMA:
             self._run_akustik_uyari()
         elif self._phase == PHASE_DALIS:
             self._run_dalis()
-        elif self._phase == PHASE_G1_DUZ_SEYIR_10M:
-            self._run_g1_duz_seyir()
-        elif self._phase == PHASE_G1_UZAKLASMA_50M:
-            self._run_g1_uzaklasma()
-        elif self._phase == PHASE_G1_GERI_DONUS:
-            self._run_g1_geri_donus()
-        elif self._phase == PHASE_G1_TAMAMLANDI_YUZEYDE_BEKLE:
+        elif self._phase == PHASE_G1_0_10M_KALIBRASYON:
+            self._run_g1_0_10m_kalibrasyon()
+        elif self._phase == PHASE_G1_10_40M_ANA_SEYIR:
+            self._run_g1_10_40m_ana_seyir()
+        elif self._phase == PHASE_G1_40_50M_YAVASLAMA:
+            self._run_g1_40_50m_yavaslama()
+        elif self._phase == PHASE_G1_U_DONUS:
+            self._run_g1_u_donus()
+        elif self._phase == PHASE_G1_GERI_DONUS_HIZLI:
+            self._run_g1_geri_donus_hizli()
+        elif self._phase == PHASE_G1_KIYIYA_YAKLASMA:
+            self._run_g1_kiyiya_yaklasma()
+        elif self._phase == PHASE_G1_BITIS_CIZGISI:
+            self._run_g1_bitis_cizgisi()
+        elif self._phase == PHASE_G1_YUZEYE_CIKIS:
+            self._run_g1_yuzeye_cikis()
+        elif self._phase == PHASE_G1_TAMAMLANDI:
             self._run_g1_tamamlandi()
-        elif self._phase == PHASE_G2_DUZ_SEYIR_30M:
-            self._run_g2_duz_seyir()
+        elif self._phase == PHASE_G2_ACILI_DALIS:
+            self._run_g2_acili_dalis()
+        elif self._phase == PHASE_G2_30M_TAMAMLAMA_SEYIR:
+            self._run_g2_30m_tamamlama_seyir()
         elif self._phase == PHASE_G2_GUVENLI_ATIS_BOLGESI:
             self._run_g2_guvenli_atis_bolgesi()
-        elif self._phase == PHASE_G2_TIRMANIS_30_DERECE:
+        elif self._phase == PHASE_G2_TIRMANIS_35_DERECE:
             self._run_g2_tirmanis()
-        elif self._phase == PHASE_G2_ACI_DOGRULAMA:
-            self._run_g2_aci_dogrulama()
+        elif self._phase == PHASE_G2_ACI_VE_YUZEY_DOGRULAMA:
+            self._run_g2_aci_ve_yuzey_dogrulama()
         elif self._phase == PHASE_G2_BURUN_KAPAGI_AC:
             self._run_g2_burun_kapagi_ac()
         elif self._phase == PHASE_G2_ATES_SINYALI_GONDER:
@@ -505,6 +596,7 @@ class GuidanceNode(Node):
     # ---------------------------------------------------------- Ortak fazlar
     def _run_referanslama(self):
         self._forward_motion = False
+        self._target_speed = 0.0
         self._target_depth = 0.0
         self._target_heading = self._heading
         self._target_pitch = 0.0
@@ -517,162 +609,255 @@ class GuidanceNode(Node):
                 f'Referanslar belirlendi: heading={math.degrees(self._reference_heading):.1f} deg, '
                 f'derinlik={self._reference_depth:.2f} m'
             )
-            self._goto_phase(PHASE_AKUSTIK_UYARI)
+            self._goto_phase(PHASE_AKUSTIK_UYARI_GOREV_BASLATMA)
 
     def _run_akustik_uyari(self):
-        """60 sn motor inhibit + son 10 sn pinger/buzzer artik BU node'da degil,
-        ayri mission_start_node tarafindan yonetiliyor (Tablo 11). Bu faz sadece
-        onun urettigi /sara/mission_start/motion_permission=True olmasini bekler."""
+        """60 sn motor inhibit + son 10 sn pinger/buzzer mission_start_node
+        tarafindan yonetiliyor (Tablo 11). Bu faz sadece onun urettigi
+        /sara/mission_start/motion_permission=True olmasini bekler.
+
+        motion_permission geldiginde gorev tipine gore DALLANIR:
+          Gorev 1 -> DALIS (yerinde/sabit dalis, sonra 0-10m kalibrasyon)
+          Gorev 2 -> G2_ACILI_DALIS (ilerlerken dalis - KTR'de arac
+                     yuzeyden basliyor ve "acili" sekilde dalıyor)
+        """
         self._forward_motion = False
+        self._target_speed = 0.0
         self._target_depth = 0.0
         self._target_heading = self._reference_heading
         self._target_pitch = 0.0
 
         if self._motion_permission:
-            self._goto_phase(PHASE_DALIS)
+            if self.mission_id == 1:
+                self._goto_phase(PHASE_DALIS)
+            else:
+                self._goto_phase(PHASE_G2_ACILI_DALIS)
 
     def _run_dalis(self):
+        """SADECE Gorev 1 icin: baslangic alanindan itibaren yerinde/sabit
+        2 m derinlige inis (sartname 6.1.1)."""
         self._forward_motion = False
+        self._target_speed = 0.0
         self._target_depth = self.dive_target_depth
         self._target_heading = self._reference_heading
         self._target_pitch = 0.0
 
         depth_ok = abs(self._depth - self.dive_target_depth) < self.depth_tol
         if self._conditions_held(depth_ok):
-            if self.mission_id == 1:
-                self._goto_phase(PHASE_G1_DUZ_SEYIR_10M)
-            else:
-                self._goto_phase(PHASE_G2_DUZ_SEYIR_30M)
+            self._goto_phase(PHASE_G1_0_10M_KALIBRASYON)
 
-    # ---------------------------------------------------------- GOREV 1
-    def _run_g1_duz_seyir(self):
-        """KTR: '0-10m kalibrasyon' fazi - dusuk/kalibrasyon hizi (0.895 m/s)."""
+    # ---------------------------------------------------------- GOREV 1 (KTR Tablo 1)
+    def _run_g1_0_10m_kalibrasyon(self):
+        """KTR: '0-10 m kalibrasyon' fazi - dusuk/kalibrasyon hizi (0.895 m/s).
+        Bu fazin sonunda sartname 6.1.1 geregi yarisma suresi (ic telemetri
+        isaretcisi) baslatilir."""
         self._target_depth = self.dive_target_depth
         self._target_heading = self._reference_heading
         self._target_pitch = 0.0
         self._forward_motion = True
-        self._target_speed = self.g1_calib_speed  # YENI: faz-bazli hiz
+        self._target_speed = self.g1_calib_speed
 
-        if self._approx_distance() >= self.g1_duz_seyir_distance:
+        if self._approx_distance() >= self.g1_kalibrasyon_distance:
             self._race_timer_start = self.get_clock().now()
             self.get_logger().info('Ilk 10 m tamamlandi - yarisma suresi (ic telemetri) baslatildi.')
-            self._goto_phase(PHASE_G1_UZAKLASMA_50M)
+            self._goto_phase(PHASE_G1_10_40M_ANA_SEYIR)
 
-    def _run_g1_uzaklasma(self):
-        """KTR Tablo 1'e tam uyum: '10-40m ana seyir' (1.076 m/s) + '40-50m
-        donus oncesi yavaslama' (0.895 m/s) - TEK fazda, mesafeye gore
-        DAHILI hiz gecisi ile (40m sinirina kadar hizli, sonrasi yavas)."""
+    def _run_g1_10_40m_ana_seyir(self):
+        """KTR: '10-40 m ana seyir' fazi - cruise hizi (1.076 m/s)."""
         self._target_depth = self.dive_target_depth
         self._target_heading = self._reference_heading
         self._target_pitch = 0.0
         self._forward_motion = True
+        self._target_speed = self.g1_cruise_speed
 
-        dist = self._approx_distance()
-        if dist < self.g1_yavaslama_baslangic_m:
-            self._target_speed = self.g1_cruise_speed   # 10-40m: ana seyir (1.076 m/s)
-        else:
-            self._target_speed = self.g1_calib_speed     # 40-50m: donus oncesi yavaslama (0.895 m/s)
+        if self._approx_distance() >= self.g1_ana_seyir_distance:
+            self._goto_phase(PHASE_G1_40_50M_YAVASLAMA)
 
-        if dist >= self.g1_uzaklasma_min_distance:
-            self._goto_phase(PHASE_G1_GERI_DONUS)
-
-    def _run_g1_geri_donus(self):
-        """Madde 5: baslangic/bitis cizgisine geri don.
-        DUZELTME (Teknik Sartname 6.1.1): donus hedefi aracin 0m'deki
-        cikis noktasi DEGIL, "kiyidan 10 metre uzaklikta bir baslangic/bitis
-        cizgisi" - yani g1_duz_seyir_distance (10m) mesafesindeki cizgi.
-
-        KTR Tablo 1'e tam uyum: 'U donus kontrollu manevra' (0.895 m/s,
-        heading henuz hedefe hizalanmamisken) + 'Geri donus hizli seyir'
-        (1.076 m/s, hizalandiktan sonra, hatti henuz uzaktayken) + 'Kiyiya
-        yaklasma' (0.895 m/s, hatta yaklasinca) - TEK fazda, DAHILI hiz
-        gecisi ile."""
-        return_heading = wrap_pi(self._reference_heading + math.pi)
+    def _run_g1_40_50m_yavaslama(self):
+        """KTR: '40-50 m donus oncesi yavaslama' fazi - kalibrasyon hizi (0.895 m/s).
+        Madde4: kiyidan en az 50 m uzaklasma sarti bu fazin sonunda saglanir."""
         self._target_depth = self.dive_target_depth
-        self._target_heading = return_heading
+        self._target_heading = self._reference_heading
         self._target_pitch = 0.0
         self._forward_motion = True
+        self._target_speed = self.g1_calib_speed
 
-        distance_to_finish_line = abs(self._approx_distance() - self.g1_duz_seyir_distance)
-        heading_aligned = abs(self._heading_error_to(return_heading)) < self.heading_tol
+        if self._approx_distance() >= self.g1_uzaklasma_min_distance:
+            self._goto_phase(PHASE_G1_U_DONUS)
 
-        if not heading_aligned:
-            self._target_speed = self.g1_calib_speed      # U donus kontrollu manevra (0.895 m/s)
-        elif distance_to_finish_line > self.g1_yaklasma_baslangic_m:
-            self._target_speed = self.g1_cruise_speed       # Geri donus hizli seyir (1.076 m/s)
-        else:
-            self._target_speed = self.g1_calib_speed          # Kiyiya yaklasma (0.895 m/s)
+    def _run_g1_u_donus(self):
+        """KTR: 'U donus kontrollu manevra' fazi - kalibrasyon hizinda (0.895
+        m/s) heading 180 derece dondurulur (~2.5 m donus yaricapi)."""
+        self._target_depth = self.dive_target_depth
+        self._target_heading = self._return_heading
+        self._target_pitch = 0.0
+        self._forward_motion = True
+        self._target_speed = self.g1_calib_speed
 
-        distance_ok = distance_to_finish_line <= self.g1_geri_donus_tolerance
+        heading_aligned = abs(self._heading_error_to(self._return_heading)) < self.heading_tol
+        if self._conditions_held(heading_aligned):
+            self._goto_phase(PHASE_G1_GERI_DONUS_HIZLI)
+
+    def _run_g1_geri_donus_hizli(self):
+        """KTR: 'Geri donus hizli seyir' fazi - cruise hizinda (1.076 m/s),
+        bitis cizgisine g1_yaklasma_baslangic_m (15 m) kalana kadar."""
+        self._target_depth = self.dive_target_depth
+        self._target_heading = self._return_heading
+        self._target_pitch = 0.0
+        self._forward_motion = True
+        self._target_speed = self.g1_cruise_speed
+
+        if self._distance_to_finish_line() <= self.g1_yaklasma_baslangic_m:
+            self._goto_phase(PHASE_G1_KIYIYA_YAKLASMA)
+
+    def _run_g1_kiyiya_yaklasma(self):
+        """KTR: 'Kiyiya yaklasma' fazi - kalibrasyon hizinda (0.895 m/s),
+        bitis cizgisi toleransina girene kadar."""
+        self._target_depth = self.dive_target_depth
+        self._target_heading = self._return_heading
+        self._target_pitch = 0.0
+        self._forward_motion = True
+        self._target_speed = self.g1_calib_speed
+
+        distance_ok = self._distance_to_finish_line() <= self.g1_bitis_cizgisi_tolerance
         if self._conditions_held(distance_ok):
-            self._goto_phase(PHASE_G1_TAMAMLANDI_YUZEYDE_BEKLE)
+            self._goto_phase(PHASE_G1_BITIS_CIZGISI)
+
+    def _run_g1_bitis_cizgisi(self):
+        """Madde5: baslangic/bitis cizgisine geri donus TAMAMLANDI - konum
+        kararlilik suresi kadar dogrulanir (ileri hareket durur, heading
+        korunur), sonra yuzeye cikisa gecilir."""
+        self._target_depth = self.dive_target_depth
+        self._target_heading = self._return_heading
+        self._target_pitch = 0.0
+        self._forward_motion = False
+        self._target_speed = 0.0
+
+        if self._conditions_held(True):
+            self._goto_phase(PHASE_G1_YUZEYE_CIKIS)
+
+    def _run_g1_yuzeye_cikis(self):
+        """Sartname 6.2.1: SARA, bitis cizgisinde ENERJIYI KESEREK guvenli
+        bir sekilde, POZITIF SEPHIYE ile su ustunde kurtarilabilir bir
+        vaziyette yuzmelidir (90 puan). Bu faz, sephiye sistemi araciligiyla
+        yuzeye kontrollu cikisi temsil eder."""
+        self._target_depth = 0.0
+        self._target_heading = self._return_heading
+        self._target_pitch = 0.0
+        self._forward_motion = False
+        self._target_speed = 0.0
+
+        depth_ok = self._depth <= self.depth_tol
+        if self._conditions_held(depth_ok):
+            self._goto_phase(PHASE_G1_TAMAMLANDI)
 
     def _run_g1_tamamlandi(self):
+        """Terminal - arac yuzeyde, sabit, guvenli durumda bekler.
+        NOT: sartnamedeki 'enerjiyi keserek gorevi sonlandirma' fiziksel
+        ana guc kesme islemi, GUDUM katmaninin kapsami DISINDADIR - bu,
+        ayri bir donanim/guvenlik katmani (orn. MOSFET tabanli ana guc
+        kesme, KTR'de tanimli) tarafindan, arac yuzeye ulastiginda
+        (surface_detected=True) tetiklenmelidir."""
         self._forward_motion = False
+        self._target_speed = 0.0
         self._target_depth = 0.0
-        self._target_heading = self._reference_heading
+        self._target_heading = self._return_heading
         self._target_pitch = 0.0
         self._launch_request = False
+        self._nose_cap_open_request = False
 
-    # ---------------------------------------------------------- GOREV 2
-    def _run_g2_duz_seyir(self):
-        """KTR: 'Dalis (30 derece)' fazi - acili kontrollu dalis hizi (0.400 m/s)."""
+    # ---------------------------------------------------------- GOREV 2 (KTR Tablo 2 + duzeltme)
+    def _run_g2_acili_dalis(self):
+        """KTR: 'Acili kontrollu dalis' fazi - ORIJINAL KTR hizi (0.400 m/s)
+        korunmustur. Arac YUZEYDEN baslar (KTR Tablo 2) ve ILERLERKEN 2 m
+        derinlige iner (DALIS fazinin aksine yerinde degil, hareket
+        halinde dalar - bu yuzden 'acili'). target_pitch=0 birakilarak
+        gercek dalis acisi otopilotun derinlik-trim kaskadindan (kisa
+        sureli pitch trim) emergent olarak olusur."""
         self._target_depth = self.dive_target_depth
         self._target_heading = self._reference_heading
         self._target_pitch = 0.0
         self._forward_motion = True
-        self._target_speed = self.g2_dive_speed  # YENI: faz-bazli hiz
+        self._target_speed = self.g2_dive_speed
+
+        depth_ok = abs(self._depth - self.dive_target_depth) < self.depth_tol
+        if self._conditions_held(depth_ok):
+            self._goto_phase(PHASE_G2_30M_TAMAMLAMA_SEYIR)
+
+    def _run_g2_30m_tamamlama_seyir(self):
+        """YENI FAZ - KTR Tablo 1 hata duzeltmesi (bkz. modul dokstringi):
+        sartname madde1'in gerektirdigi TOPLAM 30 m yatay ilerlemenin,
+        G2_ACILI_DALIS fazinda alinamayan kalanini cruise hizinda
+        (1.076 m/s) tamamlar. approx_distance() surekli biriken bir
+        sayac oldugu icin dalis fazinda kac metre alindigi onemli
+        degildir - bu faz otomatik olarak '30 m toplam'a ulasana kadar
+        devam eder."""
+        self._target_depth = self.dive_target_depth
+        self._target_heading = self._reference_heading
+        self._target_pitch = 0.0
+        self._forward_motion = True
+        self._target_speed = self.g2_transit_speed
 
         if self._approx_distance() >= self.g2_duz_seyir_distance:
             self._goto_phase(PHASE_G2_GUVENLI_ATIS_BOLGESI)
 
     def _run_g2_guvenli_atis_bolgesi(self):
-        """KTR: 'Ateşleme öncesi stabil bekleme' fazi - hiz 0 (forward_motion zaten False)."""
+        """KTR: 'Ateşleme öncesi stabil bekleme' fazi - hiz 0.
+
+        DUZELTME (saha testinde bulundu - 388 sn kilitlenme): Bu faz
+        aracin DURMASINI komut eder (forward_motion=False, hedef hiz=0).
+        Eskiden kosul icinde self._motion_consistent (navigation'un
+        odom.twist.x'inden tureyen, "arac SU AN ILERI HAREKET EDIYOR mu"
+        anlamina gelen bir bayrak) de aranıyordu. Ancak itki sifirlanip
+        arac gercekten durunca twist.x de sifira dustugu icin
+        motion_consistent HICBIR ZAMAN True olamiyordu - kendi kendini
+        engelleyen bir kosuldu (arac hem DURSUN hem de HAREKET EDIYOR
+        OLSUN isteniyordu). Yerine, aracin GERCEKTEN hedef derinlikte
+        SABIT kaldigini dogrulayan depth_ok kontrolu eklendi - bu, "stabil
+        bekleme" niyetine (KTR) çok daha uygun bir dogrulamadir."""
         self._target_depth = self.dive_target_depth
         self._target_heading = self._reference_heading
         self._target_pitch = 0.0
         self._forward_motion = False
-        self._target_speed = 0.0  # YENI: stabil bekleme, hareket yok
+        self._target_speed = 0.0
 
         dist = self._approx_distance()
         in_zone = self.g2_safe_zone_min <= dist <= self.g2_safe_zone_max
-        conditions_ok = in_zone and self._motion_consistent and not self._emergency_stop
+        depth_ok = abs(self._depth - self.dive_target_depth) < self.depth_tol
+        conditions_ok = in_zone and depth_ok and not self._emergency_stop
 
         if self._conditions_held(conditions_ok):
-            self._goto_phase(PHASE_G2_TIRMANIS_30_DERECE)
+            self._goto_phase(PHASE_G2_TIRMANIS_35_DERECE)
 
     def _run_g2_tirmanis(self):
-        """KTR: 'Yuzeye cikis (30 derece)' fazi - kontrollu cikis hizi (0.340 m/s)."""
+        """KTR: 'Yuzeye cikis' fazi - kontrollu cikis hizi (0.340 m/s),
+        hedef pitch +35 derece (sartname: >30 derece, pay icin 35 kullanildi)."""
         self._target_depth = self.g2_firing_depth
         self._target_pitch = self.g2_tirmanis_target_pitch
         self._forward_motion = True
-        self._target_speed = self.g2_ascend_speed  # YENI: faz-bazli hiz
+        self._target_speed = self.g2_ascend_speed
 
-        # DUZELTME (Sartname 4.1): ">30 derece" sarti - TEK YONLU esik, simetrik
+        # Sartname 4.1: ">30 derece" sarti - TEK YONLU esik, simetrik
         # tolerans DEGIL (simetrik tolerans 30 derecenin ALTINI da kabul ederdi).
         pitch_ok = self._pitch >= self.g2_min_launch_pitch
-        # DUZELTME: derinlik fiziksel olarak 0'in altina inemez (yuzey siniri).
-        # "Tam esitlik" yerine "yeterince sig/yuzeye ulasti mi" kontrolu dogru olan.
+        # Derinlik fiziksel olarak 0'in altina inemez (yuzey siniri) -
+        # "tam esitlik" yerine "yeterince sig/yuzeye ulasti mi" kontrolu.
         depth_ok = self._depth <= (self.g2_firing_depth + self.depth_tol)
         if self._conditions_held(pitch_ok and depth_ok):
-            self._goto_phase(PHASE_G2_ACI_DOGRULAMA)
+            self._goto_phase(PHASE_G2_ACI_VE_YUZEY_DOGRULAMA)
 
-    def _run_g2_aci_dogrulama(self):
-        """Madde 4: dogru aciyi algila. KTR (sayfa 14/37): 'dogru aci' pitch
-        degeriyle DEGIL, fiziksel olarak burun su disinda + kuyruk su icinde
-        olmasiyla dogrulanir (kismi cikis - roket atesleme icin gereken tam
-        pozisyon). Sadece pitch=30 derece olmasi YETERLI DEGILDIR.
-
-        DUZELTME: itki TAMAMEN KESILMEZ (once False idi). Gercek bir arac,
-        yuzeye yakin acili pozisyonunu itkisiz koruyamaz - sephiye tek basina
-        yeterli/hizli olmayabilir, arac tekrar batabilir (nose_submerged bir
-        daha hic False olamaz, sonsuza kadar bekler). Hafif itki ile pozisyon
-        korunur."""
+    def _run_g2_aci_ve_yuzey_dogrulama(self):
+        """Madde4: dogru aciyi algila. KTR (sayfa 14/37): 'dogru aci'
+        sadece pitch degeriyle DEGIL, fiziksel olarak burun su disinda +
+        kuyruk su icinde olmasiyla (kismi cikis) BIRLIKTE dogrulanir.
+        Itki TAMAMEN KESILMEZ - yuzeye yakin acili pozisyon itkisiz
+        korunamayabilir, hafif itki ile pozisyon korunur."""
         self._target_depth = self.g2_firing_depth
         self._target_pitch = self.g2_tirmanis_target_pitch
         self._forward_motion = True
+        self._target_speed = self.g2_ascend_speed
 
-        pitch_ok = self._pitch >= self.g2_min_launch_pitch  # DUZELTME: >30 derece sarti, tek yonlu
+        pitch_ok = self._pitch >= self.g2_min_launch_pitch  # >30 derece sarti, tek yonlu
         dogru_aci_ok = pitch_ok and self._dogru_cikis_acisi
         if self._conditions_held(dogru_aci_ok):
             self._goto_phase(PHASE_G2_BURUN_KAPAGI_AC)
@@ -680,7 +865,8 @@ class GuidanceNode(Node):
     def _run_g2_burun_kapagi_ac(self):
         self._target_depth = self.g2_firing_depth
         self._target_pitch = self.g2_tirmanis_target_pitch
-        self._forward_motion = True  # DUZELTME: pozisyonu korumak icin hafif itki
+        self._forward_motion = True  # pozisyonu korumak icin hafif itki
+        self._target_speed = self.g2_ascend_speed
         self._nose_cap_open_request = True
 
         if self._phase_elapsed() >= self.g2_nose_cap_open_duration:
@@ -689,15 +875,15 @@ class GuidanceNode(Node):
     def _run_g2_ates_sinyali(self):
         self._target_depth = self.g2_firing_depth
         self._target_pitch = self.g2_tirmanis_target_pitch
-        self._forward_motion = True  # DUZELTME: pozisyonu korumak icin hafif itki
+        self._forward_motion = True  # pozisyonu korumak icin hafif itki
+        self._target_speed = self.g2_ascend_speed
         self._nose_cap_open_request = True
 
-        pitch_ok = self._pitch >= self.g2_min_launch_pitch  # DUZELTME: >30 derece sarti (Sartname 4.1), tek yonlu
+        pitch_ok = self._pitch >= self.g2_min_launch_pitch  # >30 derece sarti (Sartname 4.1), tek yonlu
         nav_ok = self._nav_ok() and self._pixhawk_connected
-        # DUZELTME (KTR sayfa 14/37): atesleme izni "yuzeyde mi" gibi genel
-        # bir bayrakla DEGIL, "burun su disinda VE kuyruk su icinde" TAM
-        # kosuluyla verilmelidir. Tamamen batikken veya tamamen havadayken
-        # atesleme KESINLIKLE ENGELLENIR.
+        # KTR sayfa 14/37: atesleme izni "yuzeyde mi" gibi genel bir
+        # bayrakla DEGIL, "burun su disinda VE kuyruk su icinde" TAM
+        # kosuluyla verilmelidir.
         conditions_ok = (
             pitch_ok and nav_ok
             and self._dogru_cikis_acisi
@@ -711,14 +897,19 @@ class GuidanceNode(Node):
             self._goto_phase(PHASE_G2_TAMAMLANDI)
 
     def _run_g2_tamamlandi(self):
+        """Terminal - ates sinyali gonderildi, arac guvenli/sabit pozisyonda
+        bekler."""
         self._forward_motion = False
+        self._target_speed = 0.0
         self._launch_request = False
         self._nose_cap_open_request = True
-        self._target_depth = 0.0
+        self._target_depth = self.g2_firing_depth
+        self._target_pitch = self.g2_tirmanis_target_pitch
 
     # ---------------------------------------------------------- Fail-safe
     def _run_guvenli_sonlandirma(self):
         self._forward_motion = False
+        self._target_speed = 0.0
         self._launch_request = False
         self._nose_cap_open_request = False
         self._target_depth = 0.0
@@ -762,6 +953,10 @@ class GuidanceNode(Node):
         launch.data = bool(self._launch_request)
         self._launch_pub.publish(launch)
 
+        task_complete = Bool()
+        task_complete.data = self._phase in TERMINAL_PHASES
+        self._task_complete_pub.publish(task_complete)
+
         status = DiagnosticStatus()
         status.name = 'sara_guidance'
         status.hardware_id = 'jetson_orin_nano'
@@ -772,8 +967,10 @@ class GuidanceNode(Node):
         status.values = [
             KeyValue(key='mission_id', value=str(self.mission_id)),
             KeyValue(key='approx_distance_m', value=f'{self._approx_distance():.2f}'),
+            KeyValue(key='distance_to_finish_line_m', value=f'{self._distance_to_finish_line():.2f}'),
             KeyValue(key='heading_error_rad', value=f'{self._heading_error_to(self._target_heading):.3f}'),
             KeyValue(key='pitch_deg', value=f'{math.degrees(self._pitch):.1f}'),
+            KeyValue(key='target_speed_ms', value=f'{self._target_speed:.3f}'),
             KeyValue(key='launch_request', value=str(self._launch_request)),
             KeyValue(key='nose_cap_open_request', value=str(self._nose_cap_open_request)),
             KeyValue(key='mission_elapsed_s', value=f'{self._mission_elapsed():.1f}'),

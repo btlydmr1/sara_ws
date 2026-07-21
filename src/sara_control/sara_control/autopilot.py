@@ -184,6 +184,16 @@ class AutopilotNode(Node):
         self.declare_parameter('depth_rate_lpf_alpha', 0.3)
         self.declare_parameter('control_rate_hz', 20.0)
         self.declare_parameter('nav_status_timeout_s', 2.0)
+        # DUZELTME (guvenlik acigi): eskiden gudum katmaninin (guidance_node)
+        # CANLILIGINI kontrol eden HICBIR mekanizma yoktu. guidance_node
+        # cokerse/donarsa, bu node en son aldigi target_pose/target_speed/
+        # forward_motion_request degerlerini SONSUZA KADAR gecerliymis gibi
+        # kullanmaya devam ederdi - "coklu/bagimsiz fail-safe" ilkesine
+        # aykiri bir bosluktu. target_pose HER kontrol donguesunde
+        # (10 Hz, gorev fazindan bagimsiz) guidance_node tarafindan
+        # kosulsuz yayinlandigi icin guvenilir bir "heartbeat" olarak
+        # kullanilabilir.
+        self.declare_parameter('guidance_timeout_s', 1.0)
 
         self.declare_parameter('explicit_pitch_threshold_rad', 0.05)  # bu esigin ustunde
                                                                           # hedef pitch varsa (orn. Tirmanis
@@ -199,6 +209,7 @@ class AutopilotNode(Node):
         self.max_calibrated_speed = self.get_parameter('max_calibrated_speed_ms').value
         self.explicit_pitch_threshold = self.get_parameter('explicit_pitch_threshold_rad').value
         self.nav_status_timeout = self.get_parameter('nav_status_timeout_s').value
+        self.guidance_timeout = self.get_parameter('guidance_timeout_s').value
         rate = float(self.get_parameter('control_rate_hz').value)
 
         self._depth_rate_lpf = LowPassFilter(self.get_parameter('depth_rate_lpf_alpha').value)
@@ -251,6 +262,7 @@ class AutopilotNode(Node):
         self._depth_valid = False
         self._last_nav_status_time = None
         self._nav_status_level = DiagnosticStatus.STALE
+        self._last_guidance_time = None   # YENI: gudum heartbeat (target_pose gelisi)
         self._was_safe = False
 
         self._last_tick_time = self.get_clock().now()
@@ -281,6 +293,10 @@ class AutopilotNode(Node):
     # Abonelik callback'leri
     # ======================================================================
     def _on_target_pose(self, msg: PoseStamped):
+        # YENI: gudum heartbeat - target_pose HER kontrol donguesunde
+        # (gorev fazindan bagimsiz) yayinlanir, bu yuzden guvenilir bir
+        # "guidance_node yasiyor mu" gostergesidir.
+        self._last_guidance_time = self.get_clock().now()
         self._target_depth = msg.pose.position.z
         q = msg.pose.orientation
         yaw, pitch, _roll = quaternion_to_yaw_pitch_roll(q.x, q.y, q.z, q.w)
@@ -324,6 +340,14 @@ class AutopilotNode(Node):
             return False
         return self._nav_status_level != DiagnosticStatus.ERROR
 
+    def _guidance_ok(self) -> bool:
+        """YENI: guidance_node'un hala yayin yapip yapmadigini (heartbeat)
+        kontrol eder. Bkz. guidance_timeout_s parametre aciklamasi."""
+        if self._last_guidance_time is None:
+            return False
+        age = (self.get_clock().now() - self._last_guidance_time).nanoseconds * 1e-9
+        return age < self.guidance_timeout
+
     def _reset_all_pids(self):
         self.pid_depth_trim.reset()
         self.pid_pitch.reset()
@@ -348,16 +372,17 @@ class AutopilotNode(Node):
         depth_rate = self._depth_rate_lpf.update(raw_depth_rate)
         self._prev_depth = self._depth
 
-        safe = self._nav_ok() and self._pixhawk_connected and self._depth_valid
+        safe = self._nav_ok() and self._pixhawk_connected and self._depth_valid and self._guidance_ok()
 
         if not safe:
-            # Yerel on-guvenlik: navigasyon/Pixhawk saglikli degilse tum
-            # komut isteklerini sifirla ve PID integrallerini dondur
+            # Yerel on-guvenlik: navigasyon/Pixhawk/gudum saglikli degilse
+            # tum komut isteklerini sifirla ve PID integrallerini dondur
             # (baglanti kesikken windup birikmesin). NOT: bu, TAM Guvenlik
             # Katmaninin yerini TUTMAZ - o ayrica, tum komutlari
             # dogrulayacak sekilde inSA edilecektir.
             if self._was_safe:
-                self.get_logger().warn('Navigasyon/Pixhawk saglikli degil - kontrol ciktilari sifirlaniyor.')
+                reason = 'Navigasyon/Pixhawk saglikli degil' if not (self._nav_ok() and self._pixhawk_connected and self._depth_valid) else 'guidance_node veri gonderimi durdu (heartbeat kayip)'
+                self.get_logger().warn(f'{reason} - kontrol ciktilari sifirlaniyor.')
             self._reset_all_pids()
             thrust = 0.0
             fin_pitch = 0.0
@@ -424,9 +449,10 @@ class AutopilotNode(Node):
         status.name = 'sara_autopilot'
         status.hardware_id = 'jetson_orin_nano'
         status.level = DiagnosticStatus.OK if safe else DiagnosticStatus.ERROR
-        status.message = 'Nominal' if safe else 'Navigasyon/Pixhawk saglik kontrolu basarisiz - ciktilar sifir'
+        status.message = 'Nominal' if safe else 'Navigasyon/Pixhawk/Gudum saglik kontrolu basarisiz - ciktilar sifir'
         status.values = [
             KeyValue(key='mission_phase', value=self._mission_phase),
+            KeyValue(key='guidance_alive', value=str(self._guidance_ok())),
             KeyValue(key='depth_error_m', value=f'{self._target_depth - self._depth:.3f}'),
             KeyValue(key='heading_error_rad', value=f'{wrap_pi(self._target_heading - self._heading):.3f}'),
             KeyValue(key='pitch_error_rad', value=f'{self._target_pitch - self._pitch:.3f}'),

@@ -18,11 +18,15 @@ Akis:
         --60 sn dolunca VE alt sistemler saglikliysa-->
     PERMITTED (motion_permission=True, kalici)
 
-    YENI - Self-Check Gate: 60 sn dolmus olsa bile, navigation/autopilot/
-    safety node'larindan biri ERROR durumdaysa veya hic veri gelmiyorsa
-    (crash/baglanti kaybi), hareket izni VERILMEZ - sebep status mesajinda
-    acikca gorunur (orn. "navigasyon hazir degil"). Bu, sahada bir alt
-    sistem arizasinin sessizce/belirsiz sekilde gozden kacmasini onler.
+    YENI - Self-Check Gate: 60 sn dolmus olsa bile, navigation/guidance/
+    autopilot/safety node'larindan biri ERROR durumdaysa veya hic veri
+    gelmiyorsa (crash/baglanti kaybi), hareket izni VERILMEZ - sebep
+    status mesajinda acikca gorunur (orn. "navigasyon hazir degil").
+    Bu, sahada bir alt sistem arizasinin sessizce/belirsiz sekilde
+    gozden kacmasini onler. (DUZELTME: guidance_node de bu kontrole
+    eklendi - eskiden sadece navigation/autopilot/safety kontrol
+    ediliyordu, gudum katmani baslangicta cokmus olsa dahi 60sn sonunda
+    hareket izni verilebiliyordu.)
 
     Herhangi bir anda emergency_stop=True olursa: motion_permission=False
     olur ve IDLE'a donulur (yeniden baslatma icin start_command gerekir) -
@@ -34,6 +38,7 @@ Girdi:
                                           (fiziksel anahtar/lanyard -> True)
     /sara/safety/emergency_stop         (std_msgs/Bool)  - yoksa False varsayilir
     /sara/navigation/status              (diagnostic_msgs/DiagnosticStatus) - YENI: self-check
+    /sara/guidance/status                 (diagnostic_msgs/DiagnosticStatus) - YENI: self-check
     /sara/control/status                 (diagnostic_msgs/DiagnosticStatus) - YENI: self-check (autopilot)
     /sara/safety/status                  (diagnostic_msgs/DiagnosticStatus) - YENI: self-check
 
@@ -86,6 +91,8 @@ class MissionStartNode(Node):
         # YENI - Self-Check Gate: alt sistemlerin son bilinen durumu
         self._nav_status_time = None
         self._nav_status_level = DiagnosticStatus.STALE
+        self._guidance_status_time = None   # YENI
+        self._guidance_status_level = DiagnosticStatus.STALE  # YENI
         self._autopilot_status_time = None
         self._autopilot_status_level = DiagnosticStatus.STALE
         self._safety_status_time = None
@@ -94,6 +101,7 @@ class MissionStartNode(Node):
         self.create_subscription(Bool, '/sara/mission_start/start_command', self._on_start_command, 10)
         self.create_subscription(Bool, '/sara/safety/emergency_stop', self._on_emergency_stop, 10)
         self.create_subscription(DiagnosticStatus, '/sara/navigation/status', self._on_nav_status, 10)
+        self.create_subscription(DiagnosticStatus, '/sara/guidance/status', self._on_guidance_status, 10)  # YENI
         self.create_subscription(DiagnosticStatus, '/sara/control/status', self._on_autopilot_status, 10)
         self.create_subscription(DiagnosticStatus, '/sara/safety/status', self._on_safety_status, 10)
 
@@ -124,6 +132,10 @@ class MissionStartNode(Node):
         self._nav_status_time = self.get_clock().now()
         self._nav_status_level = msg.level
 
+    def _on_guidance_status(self, msg: DiagnosticStatus):
+        self._guidance_status_time = self.get_clock().now()
+        self._guidance_status_level = msg.level
+
     def _on_autopilot_status(self, msg: DiagnosticStatus):
         self._autopilot_status_time = self.get_clock().now()
         self._autopilot_status_level = msg.level
@@ -150,6 +162,11 @@ class MissionStartNode(Node):
             problems.append('navigasyon_veri_yok')
         elif self._nav_status_level == DiagnosticStatus.ERROR:
             problems.append('navigasyon_ERROR')
+
+        if not self._subsystem_fresh(self._guidance_status_time):
+            problems.append('gudum_veri_yok')
+        elif self._guidance_status_level == DiagnosticStatus.ERROR:
+            problems.append('gudum_ERROR')
 
         if not self._subsystem_fresh(self._autopilot_status_time):
             problems.append('otopilot_veri_yok')

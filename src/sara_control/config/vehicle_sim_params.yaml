@@ -5,13 +5,24 @@ vehicle_sim:
   ros__parameters:
     # --- Fizik model katsayilari (TODO: gercek arac testleriyle iyilestirilecek) ---
     k_yaw: 0.6                    # fin_yaw_command -> yaw_rate [rad/s per unit]
-    k_pitch: 0.5                  # fin_pitch_command -> pitch_rate [rad/s per unit]
+    # DUZELTME (test iterasyonu hizlandirmasi): k_pitch ve k_buoyancy_depth,
+    # KTR raporunda GECMEYEN, SADECE bu simulatore ozgu yer tutucu
+    # katsayilardir (dosyanin kendi basliginda zaten "gercek arac
+    # testleriyle iyilestirilecek" diye isaretli). G2_ACILI_DALIS ve
+    # G2_TIRMANIS_35_DERECE fazlarinin gecis kosulu MESAFE degil DERINLIK/
+    # ACIYA ULASMAK oldugu icin, asil darbogaz gudumdeki hedef hiz
+    # (g2_dive_speed_ms/g2_ascend_speed_ms - KTR'de hidrodinamik/motor
+    # hesaplarla raporlanmis, DEGISTIRILMEDI) degil, bu iki katsayidir.
+    # Degerler ~2x artirildi (0.5->1.0, 0.25->0.55) - SADECE simulasyonun
+    # tepki hizini artirir, gercek KTR degerlerine veya gudum mantigina
+    # HICBIR ETKISI YOKTUR.
+    k_pitch: 1.0                  # (eski: 0.5) fin_pitch_command -> pitch_rate [rad/s per unit]
     k_buoyancy_pitch: 0.05        # buoyancy_command'in pitch'e yan etkisi
     # DUZELTME: navigation.py + autopilot.py'nin max_calibrated_speed_ms=1.076
     # degeriyle TUTARLI olmasi icin guncellendi (thrust=1.0 -> 1.076 m/s,
     # KTR'deki ana seyir hizi).
     k_thrust: 1.076                # thrust_command -> ileri hiz [m/s per unit]
-    k_buoyancy_depth: 0.25        # buoyancy_command -> derinlik degisim hizi [m/s per unit]
+    k_buoyancy_depth: 0.55        # (eski: 0.25) buoyancy_command -> derinlik degisim hizi [m/s per unit]
     pitch_limit_rad: 1.2          # fiziksel pitch siniri (~69 derece)
     max_depth: 10.0               # havuz/deniz azami derinligi (guvenlik siniri, simulasyonda)
     vehicle_length_m: 0.996       # arac boyu [m] - burun/kuyruk sensor ayrimi icin (sartname)

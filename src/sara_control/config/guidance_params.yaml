@@ -1,5 +1,5 @@
 # guidance_params.yaml
-# SARA platformu - Gudum Katmani parametreleri
+# SARA platformu - Gudum Katmani parametreleri (v3 - granuler faz mimarisi)
 # Kullanim: ros2 run sara_control guidance --ros-args --params-file <bu_dosya>
 #           veya launch dosyasinda parameters=[<bu_dosyanin_yolu>]
 
@@ -16,28 +16,43 @@ guidance_node:
     # --- Zamanlama / kararlilik ---
     kararlilik_suresi_s: 3.0          # kosul kesintisiz saglanma suresi
     max_mission_duration_s: 600.0     # fail-safe: azami gorev suresi
-    g2_ates_sinyali_timeout_s: 30.0   # YENI: atesleme fazina ozel, bagimsiz zaman asimi
+    g2_ates_sinyali_timeout_s: 30.0   # atesleme fazina ozel, bagimsiz zaman asimi
     nav_status_timeout_s: 2.0         # fail-safe: navigasyon veri zaman asimi
     startup_grace_period_s: 5.0       # baslangicta nav fail-safe'i erken tetiklenmesin
     control_rate_hz: 10.0
 
-    # --- Gorev 1 (Seyir Gorevi) ---
-    g1_duz_seyir_distance_m: 10.0        # madde 2: ilk 10 m duz
-    g1_uzaklasma_min_distance_m: 50.0     # madde 4: kiyidan en az 50 m
-    g1_yavaslama_baslangic_m: 40.0          # KTR: 40m'den sonra yavasla (donus oncesi)
-    g1_yaklasma_baslangic_m: 15.0            # KTR: cizgiye ~15m kalinca yavasla
-    g1_geri_donus_tolerance_m: 2.0         # kanitlanmis deger, PID ayarlanmadan sikilastirilmadi
+    # --- Faz hizlari (KTR Tablo 1 / Tablo 2 ile dogrulanan gercek degerler) ---
+    max_calibrated_speed_ms: 1.076    # tam itkide (thrust=1.0) ulasilan hiz
+    g1_calib_speed_ms: 0.895          # G1_0_10M_KALIBRASYON, G1_40_50M_YAVASLAMA,
+                                       # G1_U_DONUS, G1_KIYIYA_YAKLASMA
+    g1_cruise_speed_ms: 1.076         # G1_10_40M_ANA_SEYIR, G1_GERI_DONUS_HIZLI
+    # DUZELTME (KTR Tablo 1 - Gorev 2 hata duzeltmesi): KTR'de bu faza
+    # 10 sn / 0.400 m/s verilmisti, ancak sartname Madde 1'in gerektirdigi
+    # 30 m YATAY ilerlemeyi hesaba katmiyordu (0.400 m/s ile 30m = 75 sn,
+    # tek basina Asama-2'nin 60 sn'lik sartname sinirini asar). KTR'nin
+    # 0.400 m/s degeri ATILMADI, sadece GERCEK anlamiyla (yuzeyden 2m'ye
+    # inis manevrasi = G2_ACILI_DALIS) korundu; 30m'nin kalanini tamamlayan
+    # YENI bir faz (G2_30M_TAMAMLAMA_SEYIR) cruise hiziyla eklendi.
+    g2_dive_speed_ms: 0.400           # G2_ACILI_DALIS - KTR'nin ORIJINAL degeri
+    g2_transit_speed_ms: 1.076        # G2_30M_TAMAMLAMA_SEYIR - YENI, duzeltme fazi
+    g2_ascend_speed_ms: 0.340         # G2_TIRMANIS_35_DERECE
 
-    # --- YENI: Faz-bazli hedef hizlar (KTR'den dogrulanan gercek degerler) ---
-    max_calibrated_speed_ms: 1.076   # tam itkide (thrust=1.0) ulasilan hiz
-    g1_calib_speed_ms: 0.895          # KTR: 0-10m kalibrasyon hizi
-    g1_cruise_speed_ms: 1.076          # KTR: 10-40m ana seyir / geri donus hizi
-    g2_dive_speed_ms: 0.400            # KTR: acili kontrollu dalis hizi
-    g2_ascend_speed_ms: 0.340           # KTR: kontrollu yuzeye cikis hizi
+    # --- Gorev 1 (Seyir) mesafe esikleri - KTR Tablo 1 ile birebir ---
+    g1_kalibrasyon_distance_m: 10.0       # 0-10m kalibrasyon sonu / sartname 6.1.1:
+                                           # yarisma suresi burada baslar / bitis cizgisi konumu
+    g1_ana_seyir_distance_m: 40.0          # 10-40m ana seyir sonu
+    g1_uzaklasma_min_distance_m: 50.0       # 40-50m yavaslama sonu / madde4: kiyidan en az 50m
+    g1_yaklasma_baslangic_m: 15.0            # geri donus hizli seyir sonu (bitis cizgisine ~15m kala yavasla)
+    g1_bitis_cizgisi_tolerance_m: 2.0         # kiyiya yaklasma sonu / bitis cizgisine varis toleransi
+                                               # (kanitlanmis deger, PID ayarlanmadan sikilastirilmadi)
 
-    # --- Gorev 2 (Atis Gorevi) ---
-    g2_duz_seyir_distance_m: 30.0         # madde 1: 30 m duz git
-    # TODO: SAHA/YARISMA KURALINA GORE TANIMLANMALI - su an test amacli placeholder
+    # --- Gorev 2 (Atis) mesafe/aci esikleri ---
+    g2_duz_seyir_distance_m: 30.0         # madde1: 30 m duz git (ACILI_DALIS + 30M_TAMAMLAMA_SEYIR
+                                           # TOPLAMDA bu mesafeyi kat eder)
+    # Guvenli atis bolgesi: 30m hedefi etrafinda tolerans bandi. Sartname
+    # bunun disinda ayrica saha/GPS koordinati vermiyor; arac GPS/DVL'siz
+    # oldugu icin (dead-reckoning) mesafe bazli bir bant olarak modellenmis -
+    # saha testlerinde dead-reckoning sapmasina gore ayarlanabilir.
     g2_safe_zone_min_m: 25.0
     g2_safe_zone_max_m: 35.0
     g2_tirmanis_target_pitch_deg: 35.0    # sartname: >30 derece, 35 pay icin kullanildi

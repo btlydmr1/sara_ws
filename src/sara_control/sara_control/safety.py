@@ -26,6 +26,7 @@ Girdi (istekler + guvenlik sinyalleri):
     /sara/control/buoyancy_request         (std_msgs/Float64)
     /sara/guidance/nose_cap_open_request   (std_msgs/Bool)
     /sara/guidance/launch_request          (std_msgs/Bool)
+    /sara/guidance/task_complete           (std_msgs/Bool)          -- YENI
     /sara/mission_start/motion_permission  (std_msgs/Bool)
     /sara/navigation/odom                  (nav_msgs/Odometry)      -- bagimsiz pitch/derinlik dogrulamasi icin
     /sara/navigation/surface_detected      (std_msgs/Bool)
@@ -41,6 +42,12 @@ Cikti (NIHAI komutlar - Pixhawk/MAVROS koprusu SADECE bunlari dinlemeli):
     /sara/control/launch_command      (std_msgs/Bool)         -- burun ayirma sistemine (atesleme) - SISTEMDE BUNU True YAPABILEN TEK YER
     /sara/safety/approved             (std_msgs/Bool)         -- semadaki "Guvenli Onay?" karari (Evet=True/Hayir=False)
     /sara/safety/fail_safe_active     (std_msgs/Bool)         -- "Hayir" dalinin acik gostergesi (Fail-Safe/Komut Bloke)
+    /sara/safety/main_power_cutoff_command (std_msgs/Bool)    -- YENI (sartname 6.2.1): gorev/faz TAMAMLANDIGINDA
+                                                                   veya GUVENLI_SONLANDIRMA'ya girildiginde True olur.
+                                                                   Fiziksel MOSFET ana guc kesme hattina baglanmasi
+                                                                   AYRI bir donanim gorevidir (pin henuz netlesmedi,
+                                                                   KTR'de tanimli devre - actuator_driver.py'ye
+                                                                   eklenecek).
     /sara/safety/status               (diagnostic_msgs/DiagnosticStatus)  -- blokaj nedeni dahil
 """
 
@@ -108,12 +115,14 @@ class SafetyNode(Node):
 
         self._nose_cap_command_latched = False
         self._was_launch_command = False
+        self._task_complete = False   # YENI - guidance_node'dan gelir
 
         self.create_subscription(Float64, '/sara/control/thrust_request', self._on_thrust_req, 10)
         self.create_subscription(Vector3, '/sara/control/fin_request', self._on_fin_req, 10)
         self.create_subscription(Float64, '/sara/control/buoyancy_request', self._on_buoyancy_req, 10)
         self.create_subscription(Bool, '/sara/guidance/nose_cap_open_request', self._on_nose_cap_req, 10)
         self.create_subscription(Bool, '/sara/guidance/launch_request', self._on_launch_req, 10)
+        self.create_subscription(Bool, '/sara/guidance/task_complete', self._on_task_complete, 10)  # YENI
         self.create_subscription(Bool, '/sara/mission_start/motion_permission', self._on_motion_permission, 10)
         self.create_subscription(Odometry, '/sara/navigation/odom', self._on_odom, 10)
         self.create_subscription(Bool, '/sara/navigation/surface_detected', self._on_surface, 10)
@@ -144,6 +153,10 @@ class SafetyNode(Node):
         # topic'i dinleyebilir).
         self._approved_pub = self.create_publisher(Bool, '/sara/safety/approved', 10)          # Evet=True / Hayir=False
         self._failsafe_pub = self.create_publisher(Bool, '/sara/safety/fail_safe_active', 10)   # Hayir dalinin acik gostergesi
+        # YENI (sartname 6.2.1 uyumu): gorev/faz TAMAMLANDIGINDA veya
+        # GUVENLI_SONLANDIRMA'ya girildiginde True olur. Fiziksel MOSFET
+        # ana guc kesme hattina baglanmasi ayri bir donanim gorevidir.
+        self._power_cutoff_pub = self.create_publisher(Bool, '/sara/safety/main_power_cutoff_command', 10)
         self._status_pub = self.create_publisher(DiagnosticStatus, '/sara/safety/status', 10)
 
         self.create_timer(1.0 / rate, self._on_timer)
@@ -169,6 +182,9 @@ class SafetyNode(Node):
 
     def _on_launch_req(self, msg: Bool):
         self._launch_request = msg.data
+
+    def _on_task_complete(self, msg: Bool):
+        self._task_complete = msg.data
 
     def _on_motion_permission(self, msg: Bool):
         self._motion_permission = msg.data
@@ -275,6 +291,16 @@ class SafetyNode(Node):
             failed = [k for k, v in launch_conditions.items() if not v]
             block_reasons.append('firlatma_bloklandi:' + ','.join(failed))
 
+        # YENI (sartname 6.2.1, savunma-derinligi): gorev tamamlandiginda
+        # (veya fail-safe/GUVENLI_SONLANDIRMA'ya girildiginde) guidance_node
+        # zaten forward_motion=False gonderir, ancak burada da ACIKCA/
+        # KOSULSUZ olarak tum hareket komutlarini sifirliyoruz - guidance
+        # katmanindaki olasi bir hataya karsi ikinci, bagimsiz bir guvence.
+        if self._task_complete:
+            thrust_command = 0.0
+            fin_command = Vector3(x=0.0, y=0.0, z=0.0)
+            buoyancy_command = 0.0
+
         self._publish_all(thrust_command, fin_command, buoyancy_command, nose_cap_command, launch_command, block_reasons, core_safe)
 
     def _publish_all(self, thrust_cmd, fin_cmd, buoyancy_cmd, nose_cap_cmd, launch_cmd, block_reasons, core_safe):
@@ -313,6 +339,10 @@ class SafetyNode(Node):
         failsafe.data = not core_safe
         self._failsafe_pub.publish(failsafe)
 
+        power_cutoff = Bool()
+        power_cutoff.data = bool(self._task_complete)
+        self._power_cutoff_pub.publish(power_cutoff)
+
         status = DiagnosticStatus()
         status.name = 'sara_safety'
         status.hardware_id = 'jetson_orin_nano'
@@ -323,6 +353,8 @@ class SafetyNode(Node):
         status.values = [
             KeyValue(key='approved', value=str(core_safe)),
             KeyValue(key='fail_safe_active', value=str(not core_safe)),
+            KeyValue(key='task_complete', value=str(self._task_complete)),
+            KeyValue(key='main_power_cutoff_command', value=str(self._task_complete)),
             KeyValue(key='thrust_command', value=f'{thrust_cmd:.2f}'),
             KeyValue(key='buoyancy_command', value=f'{buoyancy_cmd:.2f}'),
             KeyValue(key='nose_cap_command', value=str(nose_cap_cmd)),

@@ -40,6 +40,10 @@ autopilot_node:
     depth_rate_lpf_alpha: 0.3
     control_rate_hz: 20.0
     nav_status_timeout_s: 2.0
+    # DUZELTME (guvenlik acigi): guidance_node'un heartbeat (target_pose)
+    # yayinini kontrol eder - guidance_node cokerse/donarsa bu sure
+    # icinde tum kontrol ciktilari sifirlanir.
+    guidance_timeout_s: 1.0
     explicit_pitch_threshold_rad: 0.05  # bu esigin ustunde hedef pitch varsa
                                           # (orn. Tirmanis +30 derece), derinlik-trim
                                           # DEVRE DISI - gudumun acik aci komutuyla catismasin

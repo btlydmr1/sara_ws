@@ -384,7 +384,18 @@ class NavigationNode(Node):
         odom.pose.pose.orientation.z = qz
         odom.pose.pose.orientation.w = qw
 
-        odom.twist.twist.linear.x = float(self.v_kalibre) if self._motion_consistent else 0.0
+        # DUZELTME: twist.linear.x, yukaridaki mesafe birikimiyle (Satir
+        # ~359-361) AYNI tahmini hizi raporlamali. Eskiden sabit v_kalibre
+        # kullaniliyordu - bu, gercek itki seviyesinden bagimsiz, YANLIS/
+        # tutarsiz bir deger raporluyordu (orn. kalibrasyon fazinda 0.895
+        # m/s ilerlerken telemetri hala 0.9 sabit degerini gosteriyordu,
+        # tesadufen yakindi ama ana seyir fazinda 1.076 m/s'de de ayni 0.9
+        # gorunuyordu - yanlis).
+        estimated_speed_for_twist = (
+            abs(self._last_thrust_value) * self.max_calibrated_speed
+            if (self._motion_consistent and self._thrust_active) else 0.0
+        )
+        odom.twist.twist.linear.x = float(estimated_speed_for_twist)
         odom.twist.twist.angular.x = float(self._roll_rate)
         odom.twist.twist.angular.y = float(self._pitch_rate)
         odom.twist.twist.angular.z = float(self._yaw_rate)
