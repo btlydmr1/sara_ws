@@ -32,17 +32,13 @@ setup(
             'sara_viz_bridge = sara_control.sara_viz_bridge:main',
             'servo_controller = sara_control.servo_controller:main',
             'navigation = sara_control.navigation:main',
-            'mock_sensors = sara_control.mock_sensors:main',
             'mission_start = sara_control.mission_start:main',
             'guidance = sara_control.guidance:main',
             'autopilot = sara_control.autopilot:main',
             'safety = sara_control.safety:main',
             'vehicle_sim = sara_control.vehicle_sim:main',
-            'sensor_get_data = sara_control.sensor_get_data:main',
             'telemetry = sara_control.telemetry:main',
-            'actuator_driver = sara_control.actuator_driver:main',
-            'water_sensor_driver = sara_control.water_sensor_driver:main',
-            'pressure_sensor_driver = sara_control.pressure_sensor_driver:main',
+        
 
 
         ],
