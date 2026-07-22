@@ -30,6 +30,14 @@ DEGISEN TEK SEY - kontrol kararinin KAYNAGI:
         /sara/control/thrust_command    (Float64 [0,1])
         /sara/control/fin_command       (Vector3, x=pitch y=yaw, [-1,1])
         /sara/control/nose_cap_command  (Bool)
+        /sara/control/buoyancy_command  (Float64) - siringa/yuzey servosu (CH5).
+            DOGRULANDI (ekipten gelen el yazisi notla): bu servo, gorev
+            bitisinde yuzeye cikisi saglayan TEK YONLU surekli-donus
+            servosudur. Arduino firmware'i SADECE SURFACE_START/STOP
+            destekler, "geri don/dal" komutu YOK - bu yuzden pozitif
+            buoyancy_command "yuzeye cik" niyeti olarak yorumlanir,
+            tam cift-yonlu derinlik kontrolu bu donanimla YAPILAMAZ
+            (bkz. _send_buoyancy_command).
 
     Su sensoru okuma (GPIO 15/16) burada KALIYOR (calisan kod) ama
     ARTIK KENDI BASINA nose-acma KARARI VERMIYOR - sadece ham veriyi
@@ -79,7 +87,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-from std_msgs.msg import Bool, Float64
+from std_msgs.msg import Bool, Float64, Empty
 from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import FluidPressure
 from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
@@ -170,9 +178,11 @@ class ArduinoBridgeNode(Node):
         self._fin_pitch_command = 0.0   # -1..1 normalize, safety.py'den (kavitasyon-oncesi)
         self._fin_yaw_command = 0.0
         self._nose_cap_command = False
+        self._buoyancy_command = 0.0    # YENI - siringa/yuzey servosu (CH5)
         self._last_thrust_time = None
         self._last_fin_time = None
         self._last_nose_cap_time = None
+        self._last_buoyancy_time = None  # YENI
 
         # ================= Arduino'ya gonderilen son durum (gereksiz trafik onlemek icin) =================
         self._armed = False
@@ -181,12 +191,30 @@ class ArduinoBridgeNode(Node):
         self._last_pitch_sent_deg = None
         self._last_yaw_sent_deg = None
         self._last_nose_sent = None
+        self._surface_servo_running = False  # YENI - CH5 durumu
 
         self._last_telemetry = {}
 
         self.create_subscription(Float64, '/sara/control/thrust_command', self._on_thrust, 10)
         self.create_subscription(Vector3, '/sara/control/fin_command', self._on_fin, 10)
         self.create_subscription(Bool, '/sara/control/nose_cap_command', self._on_nose_cap, 10)
+        # YENI: siringa/yuzey servosu (CH5, Arduino'da YUZEY_SERVO_KANALI).
+        # Fotografli notta dogrulandi: "1 siringa -> gorev bitisinde yuzeye
+        # cikis icin (servo surekli donecek)". Bu servo TEK YONLU calisir
+        # (Arduino firmware'inde sadece SURFACE_START/SURFACE_STOP var,
+        # "geri don/dal" komutu YOK) - bu yuzden buoyancy_command'in
+        # SADECE "yuzeye cik" (pozitif) niyetini algiliyoruz, tam
+        # cift-yonlu derinlik kontrolu bu donanimla desteklenmiyor
+        # (bkz. _send_buoyancy_command yorumu).
+        self.create_subscription(Float64, '/sara/control/buoyancy_command', self._on_buoyancy, 10)
+        # YENI: navigation.py'nin ZATEN VAR OLAN /sara/navigation/recalibrate
+        # topic'ine (kendi P0/yuzey basinci kalibrasyonu icin) BU KOPRÜ DE
+        # abone olur - boylece TEK bir "recalibrate" komutu hem yazilim
+        # tarafindaki (navigation.py) hem donanim tarafindaki (Arduino'nun
+        # kendi 'Z' sifir kalibrasyonu) referans noktasini BIRLIKTE
+        # sifirlar. Mevcut mekanizmaya EKLENDI, yeni bir topic ICAT
+        # EDILMEDI - amac takimin tek bir komutla ikisini de tetikleyebilmesi.
+        self.create_subscription(Empty, '/sara/navigation/recalibrate', self._on_recalibrate, 10)
 
         sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -224,6 +252,7 @@ class ArduinoBridgeNode(Node):
             self._last_pitch_sent_deg = None
             self._last_yaw_sent_deg = None
             self._last_nose_sent = None
+            self._surface_servo_running = False
         except (serial.SerialException, OSError) as hata:
             self.get_logger().error(f'Arduino seri baglantisi acilamadi: {hata}')
             self.connection = None
@@ -263,6 +292,7 @@ class ArduinoBridgeNode(Node):
             self._last_pitch_sent_deg = None
             self._last_yaw_sent_deg = None
             self._last_nose_sent = None
+            self._surface_servo_running = False
             self.get_logger().info(f'Arduino seri baglantisi yeniden kuruldu: {self.port}')
         except (serial.SerialException, OSError) as hata:
             self.get_logger().warning(f'Arduino yeniden baglanamadi: {hata}')
@@ -328,6 +358,29 @@ class ArduinoBridgeNode(Node):
         self._nose_cap_command = msg.data
         self._last_nose_cap_time = self.get_clock().now()
 
+    def _on_buoyancy(self, msg: Float64):
+        self._buoyancy_command = msg.data
+        self._last_buoyancy_time = self.get_clock().now()
+
+    def _on_recalibrate(self, _msg: Empty):
+        # GUVENLIK: Arduino'nun 'Z' komutu ~3 saniye BLOKE EDER (delay(3000)
+        # + 300 ornek ortalama) - bu sirada heartbeat isleyemez. Motor
+        # calisiyorken tetiklenirse Arduino'nun HEARTBEAT_LOST guvenlik
+        # kilidine (motoruHemenNotreAl(MOTOR_FAULT)) yol acabilir. Bu yuzden
+        # sadece motor calismiyorken Arduino'ya iletilir; aksi halde
+        # reddedilir ve nedeni loglanir (navigation.py KENDI P0 kalibrasyonunu
+        # yine de yapar - sadece Arduino'nun donanimsal sifir noktasi
+        # guncellenmemis olur).
+        if self._motor_running:
+            self.get_logger().warning(
+                'Yeniden kalibrasyon istegi alindi ama motor CALISIYOR - '
+                "Arduino'nun 'Z' komutu (3 sn bloke eder) GUVENLIK ICIN GONDERILMEDI. "
+                'Motor durunca tekrar deneyin.'
+            )
+            return
+        self._serial_write('Z')
+        self.get_logger().info("Yeniden kalibrasyon istegi -> Arduino'ya 'Z' (basinc sifir kalibrasyonu) gonderildi.")
+
     def _fresh(self, stamp) -> bool:
         if stamp is None:
             return False
@@ -341,6 +394,34 @@ class ArduinoBridgeNode(Node):
         self._send_motor_command()
         self._send_fin_commands()
         self._send_nose_cap_command()
+        self._send_buoyancy_command()
+
+    def _send_buoyancy_command(self):
+        """Siringa/yuzey servosu (CH5) - fotografli notta dogrulandi:
+        "gorev bitisinde yuzeye cikis icin, servo surekli donecek".
+
+        *** BILINEN SINIRLAMA (Arduino firmware'i DEGISTIRILMEDI) ***
+        Bu servo TEK YONLU calisir - Arduino sadece SURFACE_START (sabit
+        yonde surekli don) / SURFACE_STOP destekliyor, "geri don/dal"
+        komutu YOK. Bu yuzden autopilot.py'nin urettigi surekli
+        buoyancy_command degeri (potansiyel olarak dalis icin negatif,
+        cikis icin pozitif) burada TAM cift-yonlu derinlik kontrolu
+        olarak KULLANILAMIYOR - sadece "yuzeye cikmak istiyoruz mu"
+        (pozitif deger) niyeti algilanip SURFACE_START/STOP'a
+        cevriliyor. Dalis, aracin agirlik/trim dengesiyle VE pitch/fin
+        kontroluyle saglaniyor (guidance.py'nin DALIS/G2_ACILI_DALIS
+        fazlarinda oldugu gibi), bu servo SADECE surfacing'e yardimci
+        oluyor - THRUST_THRESHOLD ile ayni mantik, farkli fiziksel
+        mekanizma."""
+        buoyancy = self._buoyancy_command if self._fresh(self._last_buoyancy_time) else 0.0
+        want_surface = buoyancy > self.THRUST_THRESHOLD
+
+        if want_surface and not self._surface_servo_running:
+            self._serial_write('SURFACE_START')
+            self._surface_servo_running = True
+        elif not want_surface and self._surface_servo_running:
+            self._serial_write('SURFACE_STOP')
+            self._surface_servo_running = False
 
     def _send_motor_command(self):
         """*** ESC BILINEN SINIRLAMA *** - bkz. modul dokstringi. Arduino
@@ -435,17 +516,20 @@ class ArduinoBridgeNode(Node):
             KeyValue(key='pitch_deg_sent', value=str(self._last_pitch_sent_deg)),
             KeyValue(key='yaw_deg_sent', value=str(self._last_yaw_sent_deg)),
             KeyValue(key='nose_cap_sent', value=str(self._last_nose_sent)),
+            KeyValue(key='surface_servo_running', value=str(self._surface_servo_running)),  # YENI
             KeyValue(key='water_1_kararli', value=str(self.water_1.kararli)),
             KeyValue(key='water_2_kararli', value=str(self.water_2.kararli)),
             KeyValue(key='esc_us_arduino', value=str(self._last_telemetry.get('esc_us', '-'))),
             KeyValue(key='motor_state_arduino', value=str(self._last_telemetry.get('motor_state', '-'))),
             KeyValue(key='proportional_thrust_supported', value='False'),
+            KeyValue(key='bidirectional_buoyancy_supported', value='False'),  # YENI
         ]
         self._status_pub.publish(status)
 
     def close(self):
         try:
             self._serial_write('NOSE=0.0')
+            self._serial_write('SURFACE_STOP')  # YENI - siringa servosunu da guvenli durdur
             self._serial_write('SERVO_CENTER')
             self._serial_write('MOTOR_STOP')
             time.sleep(0.15)
