@@ -58,16 +58,27 @@ Iki AYRI gorev profili destekler (parametre ile secilir: mission_id):
   DUZELTME: KTR'nin 0.400 m/s degeri ATILMADI - "G2_ACILI_DALIS" fazi
   olarak GERCEK anlamiyla (yuzeyden 2 m'ye inis manevrasi) korundu.
   Bunun UZERINE, 30 m'nin geri kalanini tamamlayan YENI bir faz
-  (G2_30M_TAMAMLAMA_SEYIR) eklendi ve bu faz Gorev 1'deki cruise hizini
-  (1.076 m/s) kullanir. Toplam mesafe muhasebesi (approx_distance,
-  navigation_node'da surekli birikir) her iki fazda da ayni sayaci
-  kullandigi icin, dalis fazinda kac metre alindigi ONEMLI DEGILDIR -
-  G2_30M_TAMAMLAMA_SEYIR fazi otomatik olarak "30 m'ye ulasana kadar"
-  devam eder. Tipik sure butcesi: dalis ~10 sn (~4 m) + tamamlama
-  (30-4)/1.076 ~= 24.2 sn = toplam ~34 sn seyir + guvenli bolge
-  bekleme + tirmanis + dogrulama + burun kapagi (3 sn sabit) + ates
-  sinyali bekleme - KTR'nin diger fazlariyla toplandiginda 60 sn
-  sinirinin GUVENLE ALTINDA kalir.
+  (G2_30M_TAMAMLAMA_SEYIR) eklendi. Toplam mesafe muhasebesi
+  (approx_distance, navigation_node'da surekli birikir) her iki fazda
+  da ayni sayaci kullandigi icin, dalis fazinda kac metre alindigi
+  ONEMLI DEGILDIR - G2_30M_TAMAMLAMA_SEYIR fazi otomatik olarak
+  "30 m'ye ulasana kadar" devam eder.
+
+  DUZELTME (2. tur, saha/sim testinden sonra): ilk simulasyon
+  testinde toplam Gorev-2 suresi (G2_TAMAMLANDI'ya kadar) ~64.5 sn
+  olculdu - gercek atesleme tetigi (_launch_request) daha erken,
+  ~58.4 sn'de gerciklesiyor (bkz. _run_g2_ates_sinyali - kararlilik
+  suresi 3.0 sn'de tetiklenir, sonraki 6 sn sadece TAMAMLANDI fazina
+  gecis icin yazilimsal onay bekleme suresidir) ama yine de 60 sn
+  sinirina marj cok dardi (~1.6 sn). Bu yuzden g2_dive_speed_ms
+  (0.400->0.55) ve g2_transit_speed_ms (1.076->1.3) YUKSELTILDI (bkz.
+  guidance_params.yaml). Bu artik KTR'nin ham degerleri DEGIL -
+  planlama hedefi, havuz/deniz testinde dogrulanmali. Ayrica
+  navigation_node'daki mesafe hesabina cos(pitch) duzeltmesi eklendi
+  (acili fazlarda yatay mesafe onceden fazla sayiliyordu), bu da
+  G2_30M_TAMAMLAMA_SEYIR'i hafifce uzatabilir - hiz artisi bunu
+  fazlasiyla dengeliyor. YENI test sonrasi bu yorum tekrar
+  guncellenmelidir.
 
 GUVENLIK KURALLARI (rapor + kullanicidan gelen sartlar):
   - Acil durdurma butonuna basilirsa motorlar HEMEN durur (ayni kontrol
@@ -229,10 +240,23 @@ class GuidanceNode(Node):
         self.declare_parameter('dive_target_depth', 2.0)          # [m] - Gorev1 madde1 (Gorev2 icin de varsayilan)
         self.declare_parameter('depth_tolerance', 0.15)             # [m]
         self.declare_parameter('heading_tolerance', 0.10)           # [rad] (~5.7 derece) - kanitlanmis deger
-        self.declare_parameter('pitch_tolerance', 0.10)             # [rad]
         self.declare_parameter('kararlilik_suresi_s', 3.0)           # kosul kesintisiz saglanma suresi
         self.declare_parameter('max_mission_duration_s', 600.0)      # fail-safe: azami gorev suresi
         self.declare_parameter('g2_ates_sinyali_timeout_s', 30.0)     # atesleme fazina OZEL, BAGIMSIZ zaman asimi
+        # DUZELTME: onceden bu bekleme "kararlilik_suresi * 3.0" (9 sn)
+        # olarak, kosul-dogrulama suresiyle AYNI sabitten turetiliyordu -
+        # ama bu ikisinin fiziksel anlami farkli: kararlilik_suresi
+        # "sensorler yalan soylemiyor mu" sorusuna (gurultu filtresi),
+        # bu parametre ise "fiziksel ateşleme mekanizmasi (yay/burun
+        # ayrilmasi) gercekten tamamlandi mi" sorusuna cevap veriyor.
+        # Arac bu sure boyunca hala AKTIF kontrolde kalir (forward_motion
+        # =True, sabit pitch/derinlik) - TAMAMLANDI fazina gecince pasif
+        # olur (target_speed=0). Guvenlik icin bu bekleme KALDIRILMADI,
+        # sadece kararlilik_suresi'nden BAGIMSIZ, ayri bir parametre
+        # yapildi. KTR'nin "Roket ateşleme" butcesi 2.00 sn idi; 3.0 sn
+        # ile baslaniyor (KTR'ye yakin + kucuk pay), gercek mekanizma
+        # suresi donanimla olculunce buradan guncellenmelidir.
+        self.declare_parameter('g2_post_launch_settle_s', 3.0)
         self.declare_parameter('nav_status_timeout_s', 2.0)           # fail-safe: navigasyon veri zaman asimi
         self.declare_parameter('startup_grace_period_s', 5.0)          # baslangicta diger node'lar henuz
                                                                             # yayina baslamadan "nav gecersiz"
@@ -296,10 +320,10 @@ class GuidanceNode(Node):
         self.dive_target_depth = self.get_parameter('dive_target_depth').value
         self.depth_tol = self.get_parameter('depth_tolerance').value
         self.heading_tol = self.get_parameter('heading_tolerance').value
-        self.pitch_tol = self.get_parameter('pitch_tolerance').value
         self.kararlilik_suresi = self.get_parameter('kararlilik_suresi_s').value
         self.max_mission_duration = self.get_parameter('max_mission_duration_s').value
         self.g2_ates_sinyali_timeout = self.get_parameter('g2_ates_sinyali_timeout_s').value
+        self.g2_post_launch_settle = self.get_parameter('g2_post_launch_settle_s').value
         self.nav_status_timeout = self.get_parameter('nav_status_timeout_s').value
         self.startup_grace_period = self.get_parameter('startup_grace_period_s').value
         self.periodic_log_interval = self.get_parameter('periodic_log_interval_s').value
@@ -990,7 +1014,13 @@ class GuidanceNode(Node):
 
         self._launch_request = self._conditions_held(conditions_ok)
 
-        if self._launch_request and self._phase_elapsed() > (self.kararlilik_suresi * 3.0):
+        # DUZELTME: eskiden "kararlilik_suresi * 3.0" (9 sn, kosul-
+        # dogrulama suresiyle ayni sabitten turetilmisti). Artik ayri
+        # ve acikca isimlendirilmis bir "atesleme sonrasi sabitlenme"
+        # suresi (g2_post_launch_settle_s) kullaniliyor - arac bu sure
+        # boyunca hala AKTIF kontrolde kalir (guvenlik icin KALDIRILMADI),
+        # ama sure artik kosul-dogrulama suresiyle karistirilmiyor.
+        if self._launch_request and self._phase_elapsed() > self.g2_post_launch_settle:
             self._goto_phase(PHASE_G2_TAMAMLANDI)
 
     def _run_g2_tamamlandi(self):

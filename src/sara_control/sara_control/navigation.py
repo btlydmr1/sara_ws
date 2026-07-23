@@ -356,12 +356,24 @@ class NavigationNode(Node):
         # seyir fazi %100 itki) doğru mesafe tahminine yansir - KTR'deki
         # 0.895 m/s ile 1.076 m/s arasindaki BUYUK fark artik dogru temsil
         # ediliyor (eski sabit-hiz varsayimi bunu yapamiyordu).
+        #
+        # DUZELTME 3: estimated_speed, aracin SU ICINDEKI gercek (egik)
+        # hizidir - yatay mesafe degildir. Arac acili hareket ederken
+        # (orn. G2_ACILI_DALIS ~30 derece, G2_TIRMANIS_35_DERECE ~35
+        # derece) bu hizin bir kismi derinlik degisimine gider, sadece
+        # cos(pitch) kadari yatay ilerlemedir. Bu carpan olmadan, acili
+        # fazlarda yatay mesafe (approx_distance/approx_x/approx_y)
+        # OLDUGUNDAN FAZLA sayilir - sartnamenin istedigi "30 m yatay
+        # ilerleme" / "50 m yatay uzaklasma" gibi kosullar gercekte
+        # saglanmadan "saglandi" sanilabilir. Duz seyirde (pitch~=0)
+        # cos(pitch)~=1, davranis degismez.
         if self._motion_consistent and self._thrust_active and dt > 0.0:
             estimated_speed = abs(self._last_thrust_value) * self.max_calibrated_speed
-            self._approx_distance += estimated_speed * dt
+            horizontal_speed = estimated_speed * math.cos(self._pitch)
+            self._approx_distance += horizontal_speed * dt
             if self.enable_xy:
-                self._approx_x += estimated_speed * math.cos(self._heading) * dt
-                self._approx_y += estimated_speed * math.sin(self._heading) * dt
+                self._approx_x += horizontal_speed * math.cos(self._heading) * dt
+                self._approx_y += horizontal_speed * math.sin(self._heading) * dt
 
         # --- Sensor "canlilik" kontrolleri (henuz baglanmamis sensorler icin) ---
         pixhawk_connected = self._is_fresh(self._last_imu_stamp, self.pixhawk_timeout)

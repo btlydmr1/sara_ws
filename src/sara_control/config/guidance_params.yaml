@@ -11,12 +11,17 @@ guidance_node:
     dive_target_depth: 2.0            # [m] - Gorev1 madde1 (Gorev2 icin de varsayilan)
     depth_tolerance: 0.15             # [m]
     heading_tolerance: 0.10           # [rad] (~5.7 derece) - kanitlanmis deger
-    pitch_tolerance: 0.10             # [rad]
 
     # --- Zamanlama / kararlilik ---
     kararlilik_suresi_s: 3.0          # kosul kesintisiz saglanma suresi
     max_mission_duration_s: 600.0     # fail-safe: azami gorev suresi
     g2_ates_sinyali_timeout_s: 30.0   # atesleme fazina ozel, bagimsiz zaman asimi
+    # DUZELTME: kararlilik_suresi_s'den AYRI, atesleme sonrasi arac
+    # hala aktif kontrolde kalirken (guvenlik icin) beklenen sure.
+    # KTR'nin "Roket atesleme" butcesi 2.00 sn idi; 3.0 sn ile
+    # baslaniyor, gercek mekanizma suresi donanimla olculunce
+    # guncellenmelidir.
+    g2_post_launch_settle_s: 3.0
     nav_status_timeout_s: 2.0         # fail-safe: navigasyon veri zaman asimi
     startup_grace_period_s: 5.0       # baslangicta nav fail-safe'i erken tetiklenmesin
     control_rate_hz: 10.0
@@ -33,9 +38,16 @@ guidance_node:
     # 0.400 m/s degeri ATILMADI, sadece GERCEK anlamiyla (yuzeyden 2m'ye
     # inis manevrasi = G2_ACILI_DALIS) korundu; 30m'nin kalanini tamamlayan
     # YENI bir faz (G2_30M_TAMAMLAMA_SEYIR) cruise hiziyla eklendi.
-    g2_dive_speed_ms: 0.400           # G2_ACILI_DALIS - KTR'nin ORIJINAL degeri
-    g2_transit_speed_ms: 1.076        # G2_30M_TAMAMLAMA_SEYIR - YENI, duzeltme fazi
-    g2_ascend_speed_ms: 0.340         # G2_TIRMANIS_35_DERECE
+    # DUZELTME: dalis (0.400->0.55) ve tamamlama (1.076->1.3) hizlari,
+    # 60 sn'lik Asama-2 siniri icin zaman marji kazanmak amaciyla
+    # KTR'nin ham degerlerinin UZERINE cikarildi. Bu artik "KTR'den
+    # birebir" degil - havuz/deniz testinde motor/pervane bu hizlara
+    # gercekten ulasabiliyor mu DOGRULANMALI. max_calibrated_speed_ms
+    # (autopilot_params.yaml) tavani da buna gore yukseltildi, aksi
+    # halde bu hedefler itki doygunlugunda (thrust=1.0) yakalanamaz.
+    g2_dive_speed_ms: 0.55            # G2_ACILI_DALIS - YUKSELTILDI, dogrulanacak (eski: 0.400, KTR)
+    g2_transit_speed_ms: 1.3          # G2_30M_TAMAMLAMA_SEYIR - YUKSELTILDI, dogrulanacak (eski: 1.076)
+    g2_ascend_speed_ms: 0.340         # G2_TIRMANIS_35_DERECE - degistirilmedi (KTR degeri korundu)
 
     # --- Gorev 1 (Seyir) mesafe esikleri - KTR Tablo 1 ile birebir ---
     g1_kalibrasyon_distance_m: 10.0       # 0-10m kalibrasyon sonu / sartname 6.1.1:

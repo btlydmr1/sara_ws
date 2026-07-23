@@ -106,7 +106,11 @@ class TelemetryNode(Node):
         self.log_to_console = self.get_parameter('log_to_console').value
 
         os.makedirs(log_dir, exist_ok=True)
-        filename = f"sara_telemetry_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        # DUZELTME: saniye hassasiyeti yerine mikrosaniye - ayni saniye
+        # icinde iki kez baslatilirsa (hizli tekrar test) dosya adi
+        # CAKISMASINI onler (cakisirsa bir node digerinin dosyasini 'w'
+        # modunda acip icerigini bozabilir).
+        filename = f"sara_telemetry_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.csv"
         self.log_path = os.path.join(log_dir, filename)
 
         self._csv_file = open(self.log_path, 'w', newline='')
@@ -309,8 +313,14 @@ class TelemetryNode(Node):
         }
         self._csv_writer.writerow(row)
         self._row_count += 1
-        if self._row_count % 50 == 0:
-            self._csv_file.flush()
+        # DUZELTME: eskiden 50 satirda bir (5Hz'de ~10 sn) flush
+        # yapiliyordu - beklenmedik kapanma (VM crash, guc kesintisi vb.)
+        # durumunda bu pencere kaybolabiliyordu (sahada boyle bir CSV
+        # bulundu: basliktan sonra tamamen NUL byte). 5Hz'de flush+fsync
+        # maliyeti ihmal edilebilir (CSV satiri kucuk), guvenlik/test
+        # verisi icin her satirda diske yazmak tercih edildi.
+        self._csv_file.flush()
+        os.fsync(self._csv_file.fileno())
 
         if self.log_to_console:
             self.get_logger().info(
